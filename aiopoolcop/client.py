@@ -350,6 +350,166 @@ class PoolCopCloudAPI:
         return UserProfile.from_dict(data)
 
     # ------------------------------------------------------------------
+    # Phase 2: Configuration endpoints
+    # ------------------------------------------------------------------
+
+    async def get_pump_config(self, poolcop_id: int) -> dict[str, Any]:
+        """Get pump configuration."""
+        return await self._request("GET", f"poolcops/{poolcop_id}/configuration/pump")
+
+    async def set_pump_config(
+        self, poolcop_id: int, config: dict[str, Any]
+    ) -> PoolCopCommand:
+        """Set pump configuration."""
+        data = await self._request(
+            "POST",
+            f"poolcops/{poolcop_id}/configuration/pump",
+            json_data=config,
+        )
+        return PoolCopCommand.from_dict(data)
+
+    async def get_filter_config(self, poolcop_id: int) -> dict[str, Any]:
+        """Get filter configuration."""
+        return await self._request("GET", f"poolcops/{poolcop_id}/configuration/filter")
+
+    async def set_filter_config(
+        self, poolcop_id: int, config: dict[str, Any]
+    ) -> PoolCopCommand:
+        """Set filter configuration."""
+        data = await self._request(
+            "POST",
+            f"poolcops/{poolcop_id}/configuration/filter",
+            json_data=config,
+        )
+        return PoolCopCommand.from_dict(data)
+
+    async def set_filtration_timers(
+        self, poolcop_id: int, timers: dict[str, Any]
+    ) -> PoolCopCommand:
+        """Set filtration timers."""
+        data = await self._request(
+            "POST",
+            f"poolcops/{poolcop_id}/configuration/filtrationtimers",
+            json_data=timers,
+        )
+        return PoolCopCommand.from_dict(data)
+
+    async def set_forced_filtration(self, poolcop_id: int, mode: str) -> PoolCopCommand:
+        """Set forced filtration mode."""
+        data = await self._request(
+            "POST",
+            f"poolcops/{poolcop_id}/configuration/filtrationtimers/forced",
+            json_data={"forcedPumpMode": mode},
+        )
+        return PoolCopCommand.from_dict(data)
+
+    async def get_pool_config(self, poolcop_id: int) -> dict[str, Any]:
+        """Get pool configuration."""
+        return await self._request("GET", f"poolcops/{poolcop_id}/configuration/pool")
+
+    async def set_pool_config(
+        self, poolcop_id: int, config: dict[str, Any]
+    ) -> PoolCopCommand:
+        """Set pool configuration."""
+        data = await self._request(
+            "POST",
+            f"poolcops/{poolcop_id}/configuration/pool",
+            json_data=config,
+        )
+        return PoolCopCommand.from_dict(data)
+
+    async def get_ph_config(self, poolcop_id: int) -> dict[str, Any]:
+        """Get pH configuration."""
+        return await self._request("GET", f"poolcops/{poolcop_id}/configuration/pH")
+
+    async def set_ph_config(
+        self, poolcop_id: int, config: dict[str, Any]
+    ) -> PoolCopCommand:
+        """Set pH configuration."""
+        data = await self._request(
+            "POST",
+            f"poolcops/{poolcop_id}/configuration/pH",
+            json_data=config,
+        )
+        return PoolCopCommand.from_dict(data)
+
+    async def get_orp_config(self, poolcop_id: int) -> dict[str, Any]:
+        """Get ORP configuration."""
+        return await self._request("GET", f"poolcops/{poolcop_id}/configuration/orp")
+
+    async def set_orp_config(
+        self, poolcop_id: int, config: dict[str, Any]
+    ) -> PoolCopCommand:
+        """Set ORP configuration."""
+        data = await self._request(
+            "POST",
+            f"poolcops/{poolcop_id}/configuration/orp",
+            json_data=config,
+        )
+        return PoolCopCommand.from_dict(data)
+
+    async def get_waterlevel_config(self, poolcop_id: int) -> dict[str, Any]:
+        """Get water level configuration."""
+        return await self._request(
+            "GET", f"poolcops/{poolcop_id}/configuration/waterlevel"
+        )
+
+    async def set_waterlevel_config(
+        self, poolcop_id: int, config: dict[str, Any]
+    ) -> PoolCopCommand:
+        """Set water level configuration."""
+        data = await self._request(
+            "POST",
+            f"poolcops/{poolcop_id}/configuration/waterlevel",
+            json_data=config,
+        )
+        return PoolCopCommand.from_dict(data)
+
+    async def get_aux_configs(self, poolcop_id: int) -> list[PoolCopAuxiliary]:
+        """Get all auxiliary configurations."""
+        data = await self._request("GET", f"poolcops/{poolcop_id}/configuration/aux")
+        if isinstance(data, list):
+            return [PoolCopAuxiliary.from_dict(d) for d in data]
+        return []
+
+    async def set_aux_config(
+        self,
+        poolcop_id: int,
+        module: str,
+        aux: str,
+        config: dict[str, Any],
+    ) -> PoolCopCommand:
+        """Set an auxiliary port's configuration."""
+        data = await self._request(
+            "POST",
+            f"poolcops/{poolcop_id}/configuration/aux/{module}/{aux}",
+            json_data=config,
+        )
+        return PoolCopCommand.from_dict(data)
+
+    async def get_equipments(self, poolcop_id: int) -> dict[str, Any]:
+        """Get equipment configuration."""
+        return await self._request(
+            "GET", f"poolcops/{poolcop_id}/configuration/equipments"
+        )
+
+    async def get_input_configs(self, poolcop_id: int) -> dict[str, Any]:
+        """Get input configurations."""
+        return await self._request("GET", f"poolcops/{poolcop_id}/configuration/inputs")
+
+    async def get_versions(self, poolcop_id: int) -> dict[str, Any]:
+        """Get version information."""
+        return await self._request(
+            "GET", f"poolcops/{poolcop_id}/configuration/versions"
+        )
+
+    async def get_network_config(self, poolcop_id: int) -> dict[str, Any]:
+        """Get network configuration."""
+        return await self._request(
+            "GET", f"poolcops/{poolcop_id}/configuration/network"
+        )
+
+    # ------------------------------------------------------------------
     # Session management
     # ------------------------------------------------------------------
 

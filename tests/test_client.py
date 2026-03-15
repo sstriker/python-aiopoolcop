@@ -613,11 +613,287 @@ async def test_get_commands_non_list(api, mock_api):
     assert result == []
 
 
+# ------------------------------------------------------------------
+# Phase 2: Configuration endpoints
+# ------------------------------------------------------------------
+
+
+async def test_get_pump_config(api, mock_api):
+    """Get pump configuration."""
+    config = {"pumpType": "Variable", "speeds": 3}
+    mock_api.get(f"{BASE_URL}/poolcops/42/configuration/pump", payload=config)
+
+    async with api:
+        result = await api.get_pump_config(42)
+
+    assert result["pumpType"] == "Variable"
+
+
+async def test_set_pump_config(api, mock_api):
+    """Set pump configuration."""
+    mock_api.post(
+        f"{BASE_URL}/poolcops/42/configuration/pump",
+        payload=COMMAND_RESPONSE,
+    )
+
+    async with api:
+        cmd = await api.set_pump_config(42, {"pumpType": "Variable"})
+
+    assert cmd.id == 1001
+
+
+async def test_get_filter_config(api, mock_api):
+    """Get filter configuration."""
+    mock_api.get(
+        f"{BASE_URL}/poolcops/42/configuration/filter",
+        payload={"filterType": "Sand"},
+    )
+
+    async with api:
+        result = await api.get_filter_config(42)
+
+    assert result["filterType"] == "Sand"
+
+
+async def test_set_filter_config(api, mock_api):
+    """Set filter configuration."""
+    mock_api.post(
+        f"{BASE_URL}/poolcops/42/configuration/filter",
+        payload=COMMAND_RESPONSE,
+    )
+
+    async with api:
+        cmd = await api.set_filter_config(42, {"filterType": "Sand"})
+
+    assert cmd.id == 1001
+
+
+async def test_set_filtration_timers(api, mock_api):
+    """Set filtration timers."""
+    mock_api.post(
+        f"{BASE_URL}/poolcops/42/configuration/filtrationtimers",
+        payload=COMMAND_RESPONSE,
+    )
+
+    async with api:
+        cmd = await api.set_filtration_timers(42, {"timers": []})
+
+    assert cmd.id == 1001
+
+
+async def test_set_forced_filtration(api, mock_api):
+    """Set forced filtration mode."""
+    mock_api.post(
+        f"{BASE_URL}/poolcops/42/configuration/filtrationtimers/forced",
+        payload=COMMAND_RESPONSE,
+    )
+
+    async with api:
+        cmd = await api.set_forced_filtration(42, "Forced48H")
+
+    assert cmd.id == 1001
+
+
+async def test_get_pool_config(api, mock_api):
+    """Get pool configuration."""
+    mock_api.get(
+        f"{BASE_URL}/poolcops/42/configuration/pool",
+        payload={"poolType": "InGround"},
+    )
+
+    async with api:
+        result = await api.get_pool_config(42)
+
+    assert result["poolType"] == "InGround"
+
+
+async def test_set_pool_config(api, mock_api):
+    """Set pool configuration."""
+    mock_api.post(
+        f"{BASE_URL}/poolcops/42/configuration/pool",
+        payload=COMMAND_RESPONSE,
+    )
+
+    async with api:
+        cmd = await api.set_pool_config(42, {"poolType": "InGround"})
+
+    assert cmd.id == 1001
+
+
+async def test_get_ph_config(api, mock_api):
+    """Get pH configuration."""
+    mock_api.get(
+        f"{BASE_URL}/poolcops/42/configuration/pH",
+        payload={"setPoint": 7.2},
+    )
+
+    async with api:
+        result = await api.get_ph_config(42)
+
+    assert result["setPoint"] == 7.2
+
+
+async def test_set_ph_config(api, mock_api):
+    """Set pH configuration."""
+    mock_api.post(
+        f"{BASE_URL}/poolcops/42/configuration/pH",
+        payload=COMMAND_RESPONSE,
+    )
+
+    async with api:
+        cmd = await api.set_ph_config(42, {"setPoint": 7.4})
+
+    assert cmd.id == 1001
+
+
+async def test_get_orp_config(api, mock_api):
+    """Get ORP configuration."""
+    mock_api.get(
+        f"{BASE_URL}/poolcops/42/configuration/orp",
+        payload={"setPoint": 700},
+    )
+
+    async with api:
+        result = await api.get_orp_config(42)
+
+    assert result["setPoint"] == 700
+
+
+async def test_set_orp_config(api, mock_api):
+    """Set ORP configuration."""
+    mock_api.post(
+        f"{BASE_URL}/poolcops/42/configuration/orp",
+        payload=COMMAND_RESPONSE,
+    )
+
+    async with api:
+        cmd = await api.set_orp_config(42, {"setPoint": 750})
+
+    assert cmd.id == 1001
+
+
+async def test_get_waterlevel_config(api, mock_api):
+    """Get water level configuration."""
+    mock_api.get(
+        f"{BASE_URL}/poolcops/42/configuration/waterlevel",
+        payload={"mode": "Auto"},
+    )
+
+    async with api:
+        result = await api.get_waterlevel_config(42)
+
+    assert result["mode"] == "Auto"
+
+
+async def test_set_waterlevel_config(api, mock_api):
+    """Set water level configuration."""
+    mock_api.post(
+        f"{BASE_URL}/poolcops/42/configuration/waterlevel",
+        payload=COMMAND_RESPONSE,
+    )
+
+    async with api:
+        cmd = await api.set_waterlevel_config(42, {"mode": "Auto"})
+
+    assert cmd.id == 1001
+
+
+async def test_get_aux_configs(api, mock_api):
+    """Get auxiliary configurations."""
+    mock_api.get(
+        f"{BASE_URL}/poolcops/42/configuration/aux",
+        payload=[AUX_RESPONSE],
+    )
+
+    async with api:
+        auxs = await api.get_aux_configs(42)
+
+    assert len(auxs) == 1
+    assert auxs[0].friendly_name == "Pool Light"
+
+
+async def test_set_aux_config(api, mock_api):
+    """Set auxiliary configuration."""
+    mock_api.post(
+        f"{BASE_URL}/poolcops/42/configuration/aux/AuxModule1/Aux1",
+        payload=COMMAND_RESPONSE,
+    )
+
+    async with api:
+        cmd = await api.set_aux_config(42, "AuxModule1", "Aux1", {"mode": "Timer"})
+
+    assert cmd.id == 1001
+
+
+async def test_get_equipments(api, mock_api):
+    """Get equipment configuration."""
+    mock_api.get(
+        f"{BASE_URL}/poolcops/42/configuration/equipments",
+        payload={"hasCover": True},
+    )
+
+    async with api:
+        result = await api.get_equipments(42)
+
+    assert result["hasCover"] is True
+
+
+async def test_get_input_configs(api, mock_api):
+    """Get input configurations."""
+    mock_api.get(
+        f"{BASE_URL}/poolcops/42/configuration/inputs",
+        payload={"inputs": []},
+    )
+
+    async with api:
+        result = await api.get_input_configs(42)
+
+    assert result["inputs"] == []
+
+
+async def test_get_versions(api, mock_api):
+    """Get version information."""
+    mock_api.get(
+        f"{BASE_URL}/poolcops/42/configuration/versions",
+        payload={"model": "Evolution"},
+    )
+
+    async with api:
+        result = await api.get_versions(42)
+
+    assert result["model"] == "Evolution"
+
+
+async def test_get_network_config(api, mock_api):
+    """Get network configuration."""
+    mock_api.get(
+        f"{BASE_URL}/poolcops/42/configuration/network",
+        payload={"ipAddress": "192.168.1.100"},
+    )
+
+    async with api:
+        result = await api.get_network_config(42)
+
+    assert result["ipAddress"] == "192.168.1.100"
+
+
 async def test_get_pools_non_list(api, mock_api):
     """Non-list pools response returns empty list."""
     mock_api.get(f"{BASE_URL}/pools", payload={"unexpected": True})
 
     async with api:
         result = await api.get_pools()
+
+    assert result == []
+
+
+async def test_get_aux_configs_non_list(api, mock_api):
+    """Non-list aux configs response returns empty list."""
+    mock_api.get(
+        f"{BASE_URL}/poolcops/42/configuration/aux", payload={"unexpected": True}
+    )
+
+    async with api:
+        result = await api.get_aux_configs(42)
 
     assert result == []
