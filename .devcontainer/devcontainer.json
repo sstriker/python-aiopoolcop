@@ -1,0 +1,26 @@
+{
+	"name": "Python aiopoolcop Development",
+	"dockerFile": "Dockerfile",
+	"context": "..",
+	"remoteUser": "root",
+
+	"customizations": {
+		"vscode": {
+			"settings": {
+				"python.defaultInterpreterPath": "/usr/local/bin/python",
+				"editor.formatOnSave": true,
+				"[python]": {
+					"editor.defaultFormatter": "charliermarsh.ruff"
+				}
+			},
+			"extensions": [
+				"ms-python.python",
+				"ms-python.vscode-pylance",
+				"charliermarsh.ruff",
+				"ryanluker.vscode-coverage-gutters"
+			]
+		}
+	},
+
+	"postCreateCommand": "poetry install --no-interaction"
+}
