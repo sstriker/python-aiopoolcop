@@ -1,5 +1,6 @@
 """Asynchronous Python client for the PoolCop Cloud API."""
 
+from .client import PoolCopCloudAPI
 from .exceptions import (
     PoolCopCloudAuthError,
     PoolCopCloudConnectionError,
@@ -27,6 +28,7 @@ from .models import (
 )
 
 __all__ = [
+    "PoolCopCloudAPI",
     "DataPoint",
     "DisconnectionTime",
     "FlowVisInfo",
