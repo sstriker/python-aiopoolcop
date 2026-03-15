@@ -22,6 +22,8 @@ from .exceptions import (
     PoolCopCloudRateLimitError,
 )
 from .models import (
+    DataPoint,
+    DisconnectionTime,
     Pool,
     PoolCopAlarm,
     PoolCopAuxiliary,
@@ -30,6 +32,7 @@ from .models import (
     PoolCopState,
     PoolCopSummary,
     UserProfile,
+    WeatherCondition,
 )
 
 
@@ -508,6 +511,137 @@ class PoolCopCloudAPI:
         return await self._request(
             "GET", f"poolcops/{poolcop_id}/configuration/network"
         )
+
+    # ------------------------------------------------------------------
+    # Phase 3: Data & extras endpoints
+    # ------------------------------------------------------------------
+
+    async def get_datapoints(
+        self,
+        poolcop_id: int,
+        *,
+        keys: list[str] | None = None,
+        start: str | None = None,
+        end: str | None = None,
+    ) -> list[DataPoint]:
+        """Get data points for multiple data keys."""
+        params: dict[str, Any] = {}
+        if keys is not None:
+            params["dataKeys"] = ",".join(keys)
+        if start is not None:
+            params["start"] = start
+        if end is not None:
+            params["end"] = end
+        data = await self._request(
+            "GET",
+            f"poolcops/{poolcop_id}/bigpool/datapoints",
+            params=params if params else None,
+        )
+        if isinstance(data, dict):
+            points = data.get("dataPoints", data.get("items", []))
+            if isinstance(points, list):
+                return [DataPoint.from_dict(d) for d in points]
+        if isinstance(data, list):
+            return [DataPoint.from_dict(d) for d in data]
+        return []
+
+    async def get_datapoint(
+        self,
+        poolcop_id: int,
+        key: str,
+        *,
+        start: str | None = None,
+        end: str | None = None,
+    ) -> list[DataPoint]:
+        """Get data points for a specific data key."""
+        params: dict[str, Any] = {}
+        if start is not None:
+            params["start"] = start
+        if end is not None:
+            params["end"] = end
+        data = await self._request(
+            "GET",
+            f"poolcops/{poolcop_id}/bigpool/datapoints/{key}",
+            params=params if params else None,
+        )
+        if isinstance(data, dict):
+            points = data.get("dataPoints", data.get("items", []))
+            if isinstance(points, list):
+                return [DataPoint.from_dict(d) for d in points]
+        if isinstance(data, list):
+            return [DataPoint.from_dict(d) for d in data]
+        return []
+
+    async def get_disconnections(self, poolcop_id: int) -> list[DisconnectionTime]:
+        """Get disconnection times for a PoolCop device."""
+        data = await self._request(
+            "GET", f"poolcops/{poolcop_id}/bigpool/disconnections"
+        )
+        if isinstance(data, dict):
+            items = data.get("disconnections", data.get("items", []))
+            if isinstance(items, list):
+                return [DisconnectionTime.from_dict(d) for d in items]
+        if isinstance(data, list):
+            return [DisconnectionTime.from_dict(d) for d in data]
+        return []
+
+    async def control_cover(self, poolcop_id: int, command: str) -> PoolCopCommand:
+        """Control the pool cover (e.g. 'Open', 'Close', 'Stop')."""
+        data = await self._request(
+            "POST",
+            f"poolcops/{poolcop_id}/state/cover",
+            json_data={"coverCommand": command},
+        )
+        return PoolCopCommand.from_dict(data)
+
+    async def set_jetstream(self, poolcop_id: int, *, on: bool) -> PoolCopCommand:
+        """Turn the jet stream on or off."""
+        data = await self._request(
+            "POST",
+            f"poolcops/{poolcop_id}/state/jetstream",
+            json_data={"isRunning": on},
+        )
+        return PoolCopCommand.from_dict(data)
+
+    async def set_suction_source(self, poolcop_id: int, source: str) -> PoolCopCommand:
+        """Set suction source ('Top' or 'Bottom')."""
+        data = await self._request(
+            "POST",
+            f"poolcops/{poolcop_id}/state/suction",
+            json_data={"suctionSource": source},
+        )
+        return PoolCopCommand.from_dict(data)
+
+    async def reboot(self, poolcop_id: int) -> PoolCopCommand:
+        """Reboot the PoolCop unit."""
+        data = await self._request("POST", f"poolcops/{poolcop_id}/state/unit/reboot")
+        return PoolCopCommand.from_dict(data)
+
+    async def set_screen_message(self, poolcop_id: int, message: str) -> PoolCopCommand:
+        """Display a message on the PoolCop screen."""
+        data = await self._request(
+            "POST",
+            f"poolcops/{poolcop_id}/state/unit/screen",
+            json_data={"message": message},
+        )
+        return PoolCopCommand.from_dict(data)
+
+    async def clear_screen_message(self, poolcop_id: int) -> None:
+        """Clear the message from the PoolCop screen."""
+        await self._request(
+            "DELETE",
+            f"poolcops/{poolcop_id}/state/unit/screen",
+            return_json=False,
+        )
+
+    async def get_weather(self, pool_id: int) -> WeatherCondition:
+        """Get current weather for a pool."""
+        data = await self._request("GET", f"pools/{pool_id}/weather/current")
+        return WeatherCondition.from_dict(data)
+
+    async def get_weather_forecast(self, pool_id: int) -> dict[str, Any]:
+        """Get weather forecast for a pool."""
+        return await self._request("GET", f"pools/{pool_id}/weather/forecast")
 
     # ------------------------------------------------------------------
     # Session management

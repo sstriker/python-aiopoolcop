@@ -25,6 +25,7 @@ from .conftest import (
     POOLCOP_RESPONSE,
     PROFILE_RESPONSE,
     STATE_RESPONSE,
+    WEATHER_RESPONSE,
 )
 
 # ------------------------------------------------------------------
@@ -897,3 +898,271 @@ async def test_get_aux_configs_non_list(api, mock_api):
         result = await api.get_aux_configs(42)
 
     assert result == []
+
+
+# ------------------------------------------------------------------
+# Phase 3: Data & extras endpoints
+# ------------------------------------------------------------------
+
+
+async def test_get_datapoints(api, mock_api):
+    """Get data points."""
+    mock_api.get(
+        re.compile(r".*/poolcops/42/bigpool/datapoints(\?|$)"),
+        payload=[
+            {"timestamp": "2026-01-15T12:00:00Z", "value": 7.2},
+        ],
+    )
+
+    async with api:
+        points = await api.get_datapoints(42, keys=["pH"])
+
+    assert len(points) == 1
+    assert points[0].value == 7.2
+
+
+async def test_get_datapoints_dict_response(api, mock_api):
+    """Get data points with dict wrapper response."""
+    mock_api.get(
+        f"{BASE_URL}/poolcops/42/bigpool/datapoints",
+        payload={
+            "dataPoints": [
+                {"timestamp": "2026-01-15T12:00:00Z", "value": 7.2},
+            ]
+        },
+    )
+
+    async with api:
+        points = await api.get_datapoints(42)
+
+    assert len(points) == 1
+
+
+async def test_get_datapoint(api, mock_api):
+    """Get data points for a specific key."""
+    mock_api.get(
+        f"{BASE_URL}/poolcops/42/bigpool/datapoints/pH",
+        payload=[
+            {"timestamp": "2026-01-15T12:00:00Z", "value": 7.2},
+        ],
+    )
+
+    async with api:
+        points = await api.get_datapoint(42, "pH")
+
+    assert len(points) == 1
+
+
+async def test_get_datapoint_with_dates(api, mock_api):
+    """Get data points with date range."""
+    mock_api.get(
+        re.compile(r".*/poolcops/42/bigpool/datapoints/pH\?"),
+        payload=[],
+    )
+
+    async with api:
+        points = await api.get_datapoint(42, "pH", start="2026-01-01", end="2026-01-31")
+
+    assert points == []
+
+
+async def test_get_datapoint_dict_response(api, mock_api):
+    """Get data points for a key with dict wrapper."""
+    mock_api.get(
+        f"{BASE_URL}/poolcops/42/bigpool/datapoints/pH",
+        payload={"items": [{"timestamp": "t1", "value": 7.0}]},
+    )
+
+    async with api:
+        points = await api.get_datapoint(42, "pH")
+
+    assert len(points) == 1
+
+
+async def test_get_disconnections(api, mock_api):
+    """Get disconnection times."""
+    mock_api.get(
+        f"{BASE_URL}/poolcops/42/bigpool/disconnections",
+        payload=[
+            {
+                "start": "2026-01-15T10:00:00Z",
+                "end": "2026-01-15T10:30:00Z",
+                "duration": "00:30:00",
+            }
+        ],
+    )
+
+    async with api:
+        disconnections = await api.get_disconnections(42)
+
+    assert len(disconnections) == 1
+    assert disconnections[0].duration == "00:30:00"
+
+
+async def test_get_disconnections_dict_response(api, mock_api):
+    """Get disconnections with dict wrapper."""
+    mock_api.get(
+        f"{BASE_URL}/poolcops/42/bigpool/disconnections",
+        payload={
+            "disconnections": [{"start": "t1", "end": "t2", "duration": "00:05:00"}]
+        },
+    )
+
+    async with api:
+        result = await api.get_disconnections(42)
+
+    assert len(result) == 1
+
+
+async def test_control_cover(api, mock_api):
+    """Control pool cover."""
+    mock_api.post(
+        f"{BASE_URL}/poolcops/42/state/cover",
+        payload=COMMAND_RESPONSE,
+    )
+
+    async with api:
+        cmd = await api.control_cover(42, "Open")
+
+    assert cmd.id == 1001
+
+
+async def test_set_jetstream(api, mock_api):
+    """Set jet stream on."""
+    mock_api.post(
+        f"{BASE_URL}/poolcops/42/state/jetstream",
+        payload=COMMAND_RESPONSE,
+    )
+
+    async with api:
+        cmd = await api.set_jetstream(42, on=True)
+
+    assert cmd.id == 1001
+
+
+async def test_set_suction_source(api, mock_api):
+    """Set suction source."""
+    mock_api.post(
+        f"{BASE_URL}/poolcops/42/state/suction",
+        payload=COMMAND_RESPONSE,
+    )
+
+    async with api:
+        cmd = await api.set_suction_source(42, "Bottom")
+
+    assert cmd.id == 1001
+
+
+async def test_reboot(api, mock_api):
+    """Reboot the unit."""
+    mock_api.post(
+        f"{BASE_URL}/poolcops/42/state/unit/reboot",
+        payload=COMMAND_RESPONSE,
+    )
+
+    async with api:
+        cmd = await api.reboot(42)
+
+    assert cmd.id == 1001
+
+
+async def test_set_screen_message(api, mock_api):
+    """Set screen message."""
+    mock_api.post(
+        f"{BASE_URL}/poolcops/42/state/unit/screen",
+        payload=COMMAND_RESPONSE,
+    )
+
+    async with api:
+        cmd = await api.set_screen_message(42, "Hello!")
+
+    assert cmd.id == 1001
+
+
+async def test_clear_screen_message(api, mock_api):
+    """Clear screen message."""
+    mock_api.delete(
+        f"{BASE_URL}/poolcops/42/state/unit/screen",
+        status=200,
+        content_type="application/json",
+        payload={},
+    )
+
+    async with api:
+        await api.clear_screen_message(42)
+
+
+async def test_get_weather(api, mock_api):
+    """Get current weather."""
+    mock_api.get(
+        f"{BASE_URL}/pools/10/weather/current",
+        payload=WEATHER_RESPONSE,
+    )
+
+    async with api:
+        weather = await api.get_weather(10)
+
+    assert weather.temp_c == 28.5
+    assert weather.condition_text == "Sunny"
+
+
+async def test_get_weather_forecast(api, mock_api):
+    """Get weather forecast."""
+    forecast = {"forecast": {"forecastday": []}}
+    mock_api.get(
+        f"{BASE_URL}/pools/10/weather/forecast",
+        payload=forecast,
+    )
+
+    async with api:
+        result = await api.get_weather_forecast(10)
+
+    assert "forecast" in result
+
+
+async def test_get_datapoints_non_list_no_key(api, mock_api):
+    """Non-list datapoints without known keys returns empty."""
+    mock_api.get(f"{BASE_URL}/poolcops/42/bigpool/datapoints", payload={"other": True})
+
+    async with api:
+        result = await api.get_datapoints(42)
+
+    assert result == []
+
+
+async def test_get_datapoint_non_list_no_key(api, mock_api):
+    """Non-list single datapoint without known keys returns empty."""
+    mock_api.get(
+        f"{BASE_URL}/poolcops/42/bigpool/datapoints/pH", payload={"other": True}
+    )
+
+    async with api:
+        result = await api.get_datapoint(42, "pH")
+
+    assert result == []
+
+
+async def test_get_disconnections_non_list_no_key(api, mock_api):
+    """Non-list disconnections without known keys returns empty."""
+    mock_api.get(
+        f"{BASE_URL}/poolcops/42/bigpool/disconnections", payload={"other": True}
+    )
+
+    async with api:
+        result = await api.get_disconnections(42)
+
+    assert result == []
+
+
+async def test_get_datapoints_with_dates(api, mock_api):
+    """Get data points with start/end date params."""
+    mock_api.get(
+        re.compile(r".*/poolcops/42/bigpool/datapoints\?"),
+        payload=[{"timestamp": "2026-01-15T12:00:00Z", "value": 7.2}],
+    )
+
+    async with api:
+        points = await api.get_datapoints(42, start="2026-01-01", end="2026-01-31")
+
+    assert len(points) == 1
+    assert points[0].value == 7.2
