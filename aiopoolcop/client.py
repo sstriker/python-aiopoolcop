@@ -496,6 +496,12 @@ class PoolCopCloudAPI:
             "GET", f"poolcops/{poolcop_id}/configuration/equipments"
         )
 
+    async def get_history(self, poolcop_id: int) -> dict[str, Any]:
+        """Get history information (backwash, refill, pH measure dates)."""
+        return await self._request(
+            "GET", f"poolcops/{poolcop_id}/configuration/history"
+        )
+
     async def get_input_configs(self, poolcop_id: int) -> dict[str, Any]:
         """Get input configurations."""
         return await self._request("GET", f"poolcops/{poolcop_id}/configuration/inputs")
