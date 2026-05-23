@@ -1,4 +1,4 @@
-"""Asynchronous client for the PoolCop Cloud API."""
+"""Asynchronous client for the PoolCop Client API."""
 
 from __future__ import annotations
 
@@ -7,108 +7,86 @@ import contextlib
 import socket
 from dataclasses import dataclass, field
 from http import HTTPStatus
-from typing import Any, Self, cast
+from typing import Any, Self
 
-from aiohttp.client import ClientError, ClientResponseError, ClientSession
+from aiohttp.client import ClientError, ClientSession
 from yarl import URL
 
-from .auth import TokenManager
 from .const import API_BASE_PATH, API_HOST, USER_AGENT
 from .exceptions import (
-    PoolCopCloudAuthError,
-    PoolCopCloudConnectionError,
-    PoolCopCloudError,
-    PoolCopCloudNotFoundError,
-    PoolCopCloudRateLimitError,
+    PoolCopClientAuthError,
+    PoolCopClientConnectionError,
+    PoolCopClientError,
+    PoolCopClientNotFoundError,
+    PoolCopClientRateLimitError,
 )
 from .models import (
-    DataPoint,
-    DisconnectionTime,
     Pool,
-    PoolCopAlarm,
-    PoolCopAuxiliary,
     PoolCopCommand,
     PoolCopDevice,
-    PoolCopState,
-    PoolCopSummary,
-    UserProfile,
-    WeatherCondition,
 )
 
 
 @dataclass
-class PoolCopCloudAPI:
-    """Main class for interacting with the PoolCop Cloud API."""
+class PoolCopClientAPI:
+    """Asynchronous client for the PoolCop Client API.
 
-    token: str
+    Uses x-api-key header authentication.
+    Rate limits: 1s between queries, 10s between queries on same entity.
+    """
+
+    api_key: str
     session: ClientSession | None = None
     request_timeout: float = 15.0
-    token_refresh_callback: Any = None
-    lang: str | None = None
 
     _close_session: bool = field(default=False, init=False, repr=False)
-    _token_manager: TokenManager = field(init=False, repr=False)
-
-    def __post_init__(self) -> None:
-        self._token_manager = TokenManager(
-            token=self.token,
-            token_refresh_callback=self.token_refresh_callback,
-        )
 
     def _build_url(self, path: str) -> URL:
+        """Build a full API URL."""
         return URL.build(
             scheme="https",
             host=API_HOST,
-            path=f"{API_BASE_PATH}/{path}",
+            path=f"{API_BASE_PATH}/{path.lstrip('/')}",
         )
 
     def _headers(self) -> dict[str, str]:
-        headers = {
+        """Return request headers."""
+        return {
             "Accept": "application/json",
             "User-Agent": USER_AGENT,
-            "Authorization": f"Bearer {self._token_manager.token}",
+            "x-api-key": self.api_key,
         }
-        if self.lang is not None:
-            headers["Accept-Language"] = self.lang
-        return headers
 
     async def _request(
         self,
         method: str,
         path: str,
         *,
-        json_data: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
         return_json: bool = True,
     ) -> Any:
-        """Make a request to the PoolCop Cloud API.
-
-        Handles 401 retry via token refresh, 429 rate limiting,
-        and maps HTTP errors to typed exceptions.
-        """
+        """Make an API request."""
         if self.session is None:
             self.session = ClientSession()
             self._close_session = True
 
         url = self._build_url(path)
-        response = await self._do_request(
-            method, url, json_data=json_data, params=params
-        )
+        headers = self._headers()
 
-        if response.status == HTTPStatus.UNAUTHORIZED:
-            try:
-                await self._token_manager.refresh()
-            except RuntimeError as exc:
-                raise PoolCopCloudAuthError(
-                    "Authentication failed and no refresh callback available."
-                ) from exc
-            response = await self._do_request(
-                method, url, json_data=json_data, params=params
-            )
-            if response.status == HTTPStatus.UNAUTHORIZED:
-                raise PoolCopCloudAuthError(
-                    "Authentication failed after token refresh."
+        try:
+            async with asyncio.timeout(self.request_timeout):
+                response = await self.session.request(
+                    method,
+                    url,
+                    headers=headers,
+                    params=params,
                 )
+        except asyncio.TimeoutError as err:
+            msg = "Timeout connecting to PoolCop Client API"
+            raise PoolCopClientConnectionError(msg) from err
+        except (ClientError, socket.gaierror) as err:
+            msg = f"Error connecting to PoolCop Client API: {err}"
+            raise PoolCopClientConnectionError(msg) from err
 
         self._handle_error_status(response)
 
@@ -118,551 +96,184 @@ class PoolCopCloudAPI:
         content_type = response.headers.get("Content-Type", "")
         if "application/json" not in content_type:
             text = await response.text()
-            msg = "Unexpected content type from the PoolCop Cloud API"
-            raise PoolCopCloudError(
-                msg,
-                {"Content-Type": content_type, "response": text},
-            )
+            msg = f"Unexpected content type: {content_type}: {text}"
+            raise PoolCopClientError(msg)
 
-        return cast(Any, await response.json())
-
-    async def _do_request(
-        self,
-        method: str,
-        url: URL,
-        *,
-        json_data: dict[str, Any] | None = None,
-        params: dict[str, Any] | None = None,
-    ) -> Any:
-        """Execute a single HTTP request with error handling."""
-        assert self.session is not None  # noqa: S101
-
-        try:
-            async with asyncio.timeout(self.request_timeout):
-                return await self.session.request(
-                    method,
-                    url,
-                    headers=self._headers(),
-                    json=json_data,
-                    params=params,
-                    ssl=True,
-                )
-        except TimeoutError as exception:
-            msg = "Timeout occurred while connecting to the PoolCop Cloud API."
-            raise PoolCopCloudConnectionError(msg) from exception
-        except (ClientError, socket.gaierror) as exception:
-            msg = "Error occurred while communicating with the PoolCop Cloud API."
-            raise PoolCopCloudConnectionError(msg) from exception
+        return await response.json()
 
     @staticmethod
     def _handle_error_status(response: Any) -> None:
-        """Raise typed exceptions for error HTTP status codes."""
+        """Raise typed exception for error HTTP status codes."""
         status = response.status
         if status == HTTPStatus.UNAUTHORIZED or status == HTTPStatus.FORBIDDEN:
-            raise PoolCopCloudAuthError(
-                f"Authentication/authorization failed (HTTP {status})."
-            )
+            msg = f"Authentication failed ({status})"
+            raise PoolCopClientAuthError(msg)
         if status == HTTPStatus.NOT_FOUND:
-            raise PoolCopCloudNotFoundError("Resource not found (HTTP 404).")
+            msg = "Resource not found"
+            raise PoolCopClientNotFoundError(msg)
         if status == HTTPStatus.TOO_MANY_REQUESTS:
             retry_after = None
-            raw = response.headers.get("Retry-After")
-            if raw is not None:
-                with contextlib.suppress(ValueError, TypeError):
-                    retry_after = int(raw)
-            raise PoolCopCloudRateLimitError(
-                "Rate limit exceeded (HTTP 429).", retry_after=retry_after
-            )
+            with contextlib.suppress(Exception):
+                data = response.headers.get("Retry-After")
+                if data:
+                    retry_after = int(data)
+            msg = "Rate limit exceeded"
+            raise PoolCopClientRateLimitError(msg, retry_after=retry_after)
+        if status >= HTTPStatus.INTERNAL_SERVER_ERROR:
+            msg = f"Server error ({status})"
+            raise PoolCopClientError(msg)
         if status >= HTTPStatus.BAD_REQUEST:
-            try:
-                response.raise_for_status()
-            except ClientResponseError as exc:
-                raise PoolCopCloudError(
-                    f"API returned HTTP {status}: {exc.message}"
-                ) from exc
+            msg = f"Client error ({status})"
+            raise PoolCopClientError(msg)
 
     # ------------------------------------------------------------------
-    # Phase 1: Core endpoints
+    # Pool endpoints
     # ------------------------------------------------------------------
-
-    async def get_poolcops(self) -> list[PoolCopSummary]:
-        """Get all PoolCop devices for the current user."""
-        data = await self._request("GET", "poolcops")
-        if isinstance(data, list):
-            return [PoolCopSummary.from_dict(d) for d in data]
-        return []
-
-    async def get_poolcop(self, poolcop_id: int) -> PoolCopDevice:
-        """Get a specific PoolCop device with full state."""
-        data = await self._request("GET", f"poolcops/{poolcop_id}")
-        return PoolCopDevice.from_dict(data)
-
-    async def get_state(self, poolcop_id: int) -> PoolCopState:
-        """Get the current state of a PoolCop device."""
-        data = await self._request("GET", f"poolcops/{poolcop_id}/state")
-        return PoolCopState.from_dict(data)
-
-    async def get_alarms(self, poolcop_id: int) -> list[PoolCopAlarm]:
-        """Get current alarms for a PoolCop device."""
-        data = await self._request("GET", f"poolcops/{poolcop_id}/alarms")
-        if isinstance(data, list):
-            return [PoolCopAlarm.from_dict(d) for d in data]
-        return []
-
-    async def get_alarm(self, poolcop_id: int, code: str) -> PoolCopAlarm:
-        """Get a specific alarm by code."""
-        data = await self._request("GET", f"poolcops/{poolcop_id}/alarms/{code}")
-        return PoolCopAlarm.from_dict(data)
-
-    async def clear_alarm(self, poolcop_id: int, code: str) -> PoolCopCommand:
-        """Clear a specific alarm by code."""
-        data = await self._request("DELETE", f"poolcops/{poolcop_id}/alarms/{code}")
-        return PoolCopCommand.from_dict(data)
-
-    async def get_alarm_history(
-        self,
-        poolcop_id: int,
-        *,
-        start: str | None = None,
-        end: str | None = None,
-    ) -> list[PoolCopAlarm]:
-        """Get alarm history for a PoolCop device."""
-        params: dict[str, Any] = {}
-        if start is not None:
-            params["start"] = start
-        if end is not None:
-            params["end"] = end
-        data = await self._request(
-            "GET",
-            f"poolcops/{poolcop_id}/alarms/history",
-            params=params if params else None,
-        )
-        if isinstance(data, list):
-            return [PoolCopAlarm.from_dict(d) for d in data]
-        return []
-
-    async def set_pump(self, poolcop_id: int, *, on: bool) -> PoolCopCommand:
-        """Turn the pump on or off."""
-        data = await self._request(
-            "POST",
-            f"poolcops/{poolcop_id}/state/pump",
-            json_data={"pumpState": on},
-        )
-        return PoolCopCommand.from_dict(data)
-
-    async def set_pump_speed(self, poolcop_id: int, speed: str) -> PoolCopCommand:
-        """Set the pump speed (e.g. 'Speed1'..'Speed8')."""
-        data = await self._request(
-            "POST",
-            f"poolcops/{poolcop_id}/state/pump/speed",
-            json_data={"pumpSpeed": speed},
-        )
-        return PoolCopCommand.from_dict(data)
-
-    async def set_pump_forced(self, poolcop_id: int, mode: str) -> PoolCopCommand:
-        """Set forced pump mode (e.g. 'NotForced', 'Forced24H', etc.)."""
-        data = await self._request(
-            "POST",
-            f"poolcops/{poolcop_id}/state/pump/forced",
-            json_data={"forcedPumpMode": mode},
-        )
-        return PoolCopCommand.from_dict(data)
-
-    async def set_valve_position(
-        self, poolcop_id: int, position: str
-    ) -> PoolCopCommand:
-        """Set the valve position (e.g. 'Filter', 'Waste', etc.)."""
-        data = await self._request(
-            "POST",
-            f"poolcops/{poolcop_id}/state/valve",
-            json_data={"valvePosition": position},
-        )
-        return PoolCopCommand.from_dict(data)
-
-    async def set_auxiliary(
-        self,
-        poolcop_id: int,
-        module: str,
-        aux: str,
-        *,
-        on: bool,
-    ) -> PoolCopCommand:
-        """Set an auxiliary port on or off."""
-        data = await self._request(
-            "POST",
-            f"poolcops/{poolcop_id}/state/aux/{module}/{aux}",
-            json_data={"status": on},
-        )
-        return PoolCopCommand.from_dict(data)
-
-    async def get_auxiliaries(self, poolcop_id: int) -> list[PoolCopAuxiliary]:
-        """Get auxiliary port configurations."""
-        data = await self._request("GET", f"poolcops/{poolcop_id}/state/aux")
-        if isinstance(data, list):
-            return [PoolCopAuxiliary.from_dict(d) for d in data]
-        return []
-
-    async def trigger_backwash(self, poolcop_id: int) -> PoolCopCommand:
-        """Trigger a backwash cycle."""
-        data = await self._request(
-            "POST", f"poolcops/{poolcop_id}/state/filter/backwash"
-        )
-        return PoolCopCommand.from_dict(data)
-
-    async def trigger_ph_measure(self, poolcop_id: int) -> PoolCopCommand:
-        """Trigger a pH measurement."""
-        data = await self._request("POST", f"poolcops/{poolcop_id}/state/pH/measure")
-        return PoolCopCommand.from_dict(data)
-
-    async def trigger_orp_measure(self, poolcop_id: int) -> PoolCopCommand:
-        """Trigger an ORP measurement."""
-        data = await self._request("POST", f"poolcops/{poolcop_id}/state/ORP/measure")
-        return PoolCopCommand.from_dict(data)
-
-    async def set_water_valve(self, poolcop_id: int, *, on: bool) -> PoolCopCommand:
-        """Open or close the water level valve."""
-        data = await self._request(
-            "POST",
-            f"poolcops/{poolcop_id}/state/waterlevel/valve",
-            json_data={"waterLevelValve": "Open" if on else "Close"},
-        )
-        return PoolCopCommand.from_dict(data)
-
-    async def get_commands(self, poolcop_id: int) -> list[PoolCopCommand]:
-        """Get commands sent to a PoolCop device."""
-        data = await self._request("GET", f"poolcops/{poolcop_id}/commands")
-        if isinstance(data, list):
-            return [PoolCopCommand.from_dict(d) for d in data]
-        return []
 
     async def get_pools(self) -> list[Pool]:
-        """Get all pools for the current user."""
-        data = await self._request("GET", "pools")
-        if isinstance(data, list):
-            return [Pool.from_dict(d) for d in data]
-        return []
+        """Get all pools the API key has access to."""
+        data = await self._request("GET", "/pools")
+        # Paginated response: {data: [...], currentPage, totalPages, ...}
+        items = data.get("data", []) if isinstance(data, dict) else []
+        return [Pool.from_dict(p) for p in items]
 
     async def get_pool(self, pool_id: int) -> Pool:
-        """Get a specific pool."""
-        data = await self._request("GET", f"pools/{pool_id}")
+        """Get a specific pool by ID."""
+        data = await self._request("GET", f"/pools/{pool_id}")
         return Pool.from_dict(data)
 
-    async def get_profile(self) -> UserProfile:
-        """Get the authenticated user's profile."""
-        data = await self._request("GET", "profile")
-        return UserProfile.from_dict(data)
-
     # ------------------------------------------------------------------
-    # Phase 2: Configuration endpoints
+    # Device endpoints
     # ------------------------------------------------------------------
 
-    async def get_pump_config(self, poolcop_id: int) -> dict[str, Any]:
-        """Get pump configuration."""
-        return await self._request("GET", f"poolcops/{poolcop_id}/configuration/pump")
+    async def get_device(self, device_id: int) -> PoolCopDevice:
+        """Get a device with full state, settings, history, and equipments."""
+        data = await self._request("GET", f"/devices/{device_id}")
+        return PoolCopDevice.from_dict(data)
 
-    async def set_pump_config(
-        self, poolcop_id: int, config: dict[str, Any]
-    ) -> PoolCopCommand:
-        """Set pump configuration."""
-        data = await self._request(
-            "POST",
-            f"poolcops/{poolcop_id}/configuration/pump",
-            json_data=config,
-        )
-        return PoolCopCommand.from_dict(data)
-
-    async def get_filter_config(self, poolcop_id: int) -> dict[str, Any]:
-        """Get filter configuration."""
-        return await self._request("GET", f"poolcops/{poolcop_id}/configuration/filter")
-
-    async def set_filter_config(
-        self, poolcop_id: int, config: dict[str, Any]
-    ) -> PoolCopCommand:
-        """Set filter configuration."""
-        data = await self._request(
-            "POST",
-            f"poolcops/{poolcop_id}/configuration/filter",
-            json_data=config,
-        )
-        return PoolCopCommand.from_dict(data)
-
-    async def set_filtration_timers(
-        self, poolcop_id: int, timers: dict[str, Any]
-    ) -> PoolCopCommand:
-        """Set filtration timers."""
-        data = await self._request(
-            "POST",
-            f"poolcops/{poolcop_id}/configuration/filtrationtimers",
-            json_data=timers,
-        )
-        return PoolCopCommand.from_dict(data)
-
-    async def set_forced_filtration(self, poolcop_id: int, mode: str) -> PoolCopCommand:
-        """Set forced filtration mode."""
-        data = await self._request(
-            "POST",
-            f"poolcops/{poolcop_id}/configuration/filtrationtimers/forced",
-            json_data={"forcedPumpMode": mode},
-        )
-        return PoolCopCommand.from_dict(data)
-
-    async def get_pool_config(self, poolcop_id: int) -> dict[str, Any]:
-        """Get pool configuration."""
-        return await self._request("GET", f"poolcops/{poolcop_id}/configuration/pool")
-
-    async def set_pool_config(
-        self, poolcop_id: int, config: dict[str, Any]
-    ) -> PoolCopCommand:
-        """Set pool configuration."""
-        data = await self._request(
-            "POST",
-            f"poolcops/{poolcop_id}/configuration/pool",
-            json_data=config,
-        )
-        return PoolCopCommand.from_dict(data)
-
-    async def get_ph_config(self, poolcop_id: int) -> dict[str, Any]:
-        """Get pH configuration."""
-        return await self._request("GET", f"poolcops/{poolcop_id}/configuration/pH")
-
-    async def set_ph_config(
-        self, poolcop_id: int, config: dict[str, Any]
-    ) -> PoolCopCommand:
-        """Set pH configuration."""
-        data = await self._request(
-            "POST",
-            f"poolcops/{poolcop_id}/configuration/pH",
-            json_data=config,
-        )
-        return PoolCopCommand.from_dict(data)
-
-    async def get_orp_config(self, poolcop_id: int) -> dict[str, Any]:
-        """Get ORP configuration."""
-        return await self._request("GET", f"poolcops/{poolcop_id}/configuration/orp")
-
-    async def set_orp_config(
-        self, poolcop_id: int, config: dict[str, Any]
-    ) -> PoolCopCommand:
-        """Set ORP configuration."""
-        data = await self._request(
-            "POST",
-            f"poolcops/{poolcop_id}/configuration/orp",
-            json_data=config,
-        )
-        return PoolCopCommand.from_dict(data)
-
-    async def get_waterlevel_config(self, poolcop_id: int) -> dict[str, Any]:
-        """Get water level configuration."""
-        return await self._request(
-            "GET", f"poolcops/{poolcop_id}/configuration/waterlevel"
-        )
-
-    async def set_waterlevel_config(
-        self, poolcop_id: int, config: dict[str, Any]
-    ) -> PoolCopCommand:
-        """Set water level configuration."""
-        data = await self._request(
-            "POST",
-            f"poolcops/{poolcop_id}/configuration/waterlevel",
-            json_data=config,
-        )
-        return PoolCopCommand.from_dict(data)
-
-    async def get_aux_configs(self, poolcop_id: int) -> list[PoolCopAuxiliary]:
-        """Get all auxiliary configurations."""
-        data = await self._request("GET", f"poolcops/{poolcop_id}/configuration/aux")
-        if isinstance(data, list):
-            return [PoolCopAuxiliary.from_dict(d) for d in data]
-        return []
-
-    async def set_aux_config(
-        self,
-        poolcop_id: int,
-        module: str,
-        aux: str,
-        config: dict[str, Any],
-    ) -> PoolCopCommand:
-        """Set an auxiliary port's configuration."""
-        data = await self._request(
-            "POST",
-            f"poolcops/{poolcop_id}/configuration/aux/{module}/{aux}",
-            json_data=config,
-        )
-        return PoolCopCommand.from_dict(data)
-
-    async def get_equipments(self, poolcop_id: int) -> dict[str, Any]:
-        """Get equipment configuration."""
-        return await self._request(
-            "GET", f"poolcops/{poolcop_id}/configuration/equipments"
-        )
-
-    async def get_history(self, poolcop_id: int) -> dict[str, Any]:
-        """Get history information (backwash, refill, pH measure dates)."""
-        return await self._request(
-            "GET", f"poolcops/{poolcop_id}/configuration/history"
-        )
-
-    async def get_input_configs(self, poolcop_id: int) -> dict[str, Any]:
-        """Get input configurations."""
-        return await self._request("GET", f"poolcops/{poolcop_id}/configuration/inputs")
-
-    async def get_versions(self, poolcop_id: int) -> dict[str, Any]:
-        """Get version information."""
-        return await self._request(
-            "GET", f"poolcops/{poolcop_id}/configuration/versions"
-        )
-
-    async def get_network_config(self, poolcop_id: int) -> dict[str, Any]:
-        """Get network configuration."""
-        return await self._request(
-            "GET", f"poolcops/{poolcop_id}/configuration/network"
-        )
+    async def get_commands(self, device_id: int) -> list[PoolCopCommand]:
+        """Get command history for a device."""
+        data = await self._request("GET", f"/devices/{device_id}/commands")
+        items = data.get("data", []) if isinstance(data, dict) else []
+        return [PoolCopCommand.from_dict(c) for c in items]
 
     # ------------------------------------------------------------------
-    # Phase 3: Data & extras endpoints
+    # Device interaction endpoints
     # ------------------------------------------------------------------
 
-    async def get_datapoints(
-        self,
-        poolcop_id: int,
-        *,
-        keys: list[str] | None = None,
-        start: str | None = None,
-        end: str | None = None,
-    ) -> list[DataPoint]:
-        """Get data points for multiple data keys."""
-        params: dict[str, Any] = {}
-        if keys is not None:
-            params["dataKeys"] = ",".join(keys)
-        if start is not None:
-            params["start"] = start
-        if end is not None:
-            params["end"] = end
-        data = await self._request(
-            "GET",
-            f"poolcops/{poolcop_id}/bigpool/datapoints",
-            params=params if params else None,
-        )
-        if isinstance(data, dict):
-            points = data.get("dataPoints", data.get("items", []))
-            if isinstance(points, list):
-                return [DataPoint.from_dict(d) for d in points]
-        if isinstance(data, list):
-            return [DataPoint.from_dict(d) for d in data]
-        return []
-
-    async def get_datapoint(
-        self,
-        poolcop_id: int,
-        key: str,
-        *,
-        start: str | None = None,
-        end: str | None = None,
-    ) -> list[DataPoint]:
-        """Get data points for a specific data key."""
-        params: dict[str, Any] = {}
-        if start is not None:
-            params["start"] = start
-        if end is not None:
-            params["end"] = end
-        data = await self._request(
-            "GET",
-            f"poolcops/{poolcop_id}/bigpool/datapoints/{key}",
-            params=params if params else None,
-        )
-        if isinstance(data, dict):
-            points = data.get("dataPoints", data.get("items", []))
-            if isinstance(points, list):
-                return [DataPoint.from_dict(d) for d in points]
-        if isinstance(data, list):
-            return [DataPoint.from_dict(d) for d in data]
-        return []
-
-    async def get_disconnections(self, poolcop_id: int) -> list[DisconnectionTime]:
-        """Get disconnection times for a PoolCop device."""
-        data = await self._request(
-            "GET", f"poolcops/{poolcop_id}/bigpool/disconnections"
-        )
-        if isinstance(data, dict):
-            items = data.get("disconnections", data.get("items", []))
-            if isinstance(items, list):
-                return [DisconnectionTime.from_dict(d) for d in items]
-        if isinstance(data, list):
-            return [DisconnectionTime.from_dict(d) for d in data]
-        return []
-
-    async def control_cover(self, poolcop_id: int, command: str) -> PoolCopCommand:
-        """Control the pool cover (e.g. 'Open', 'Close', 'Stop')."""
-        data = await self._request(
-            "POST",
-            f"poolcops/{poolcop_id}/state/cover",
-            json_data={"coverCommand": command},
-        )
-        return PoolCopCommand.from_dict(data)
-
-    async def set_jetstream(self, poolcop_id: int, *, on: bool) -> PoolCopCommand:
-        """Turn the jet stream on or off."""
-        data = await self._request(
-            "POST",
-            f"poolcops/{poolcop_id}/state/jetstream",
-            json_data={"isRunning": on},
-        )
-        return PoolCopCommand.from_dict(data)
-
-    async def set_suction_source(self, poolcop_id: int, source: str) -> PoolCopCommand:
-        """Set suction source ('Top' or 'Bottom')."""
-        data = await self._request(
-            "POST",
-            f"poolcops/{poolcop_id}/state/suction",
-            json_data={"suctionSource": source},
-        )
-        return PoolCopCommand.from_dict(data)
-
-    async def reboot(self, poolcop_id: int) -> PoolCopCommand:
-        """Reboot the PoolCop unit."""
-        data = await self._request("POST", f"poolcops/{poolcop_id}/state/unit/reboot")
-        return PoolCopCommand.from_dict(data)
-
-    async def set_screen_message(self, poolcop_id: int, message: str) -> PoolCopCommand:
-        """Display a message on the PoolCop screen."""
-        data = await self._request(
-            "POST",
-            f"poolcops/{poolcop_id}/state/unit/screen",
-            json_data={"message": message},
-        )
-        return PoolCopCommand.from_dict(data)
-
-    async def clear_screen_message(self, poolcop_id: int) -> None:
-        """Clear the message from the PoolCop screen."""
+    async def set_pump(self, device_id: int, *, on: bool, pump_id: int = 0) -> None:
+        """Turn pump on or off."""
         await self._request(
-            "DELETE",
-            f"poolcops/{poolcop_id}/state/unit/screen",
+            "POST",
+            f"/devices/{device_id}/interactions/pumpstate",
+            params={"pumpState": str(on).lower(), "pumpId": pump_id},
             return_json=False,
         )
 
-    async def get_weather(self, pool_id: int) -> WeatherCondition:
-        """Get current weather for a pool."""
-        data = await self._request("GET", f"pools/{pool_id}/weather/current")
-        return WeatherCondition.from_dict(data)
+    async def set_pump_speed(
+        self, device_id: int, speed: str, *, pump_id: int = 0
+    ) -> None:
+        """Set pump speed (None, Speed1-Speed8)."""
+        await self._request(
+            "POST",
+            f"/devices/{device_id}/interactions/pumpspeed",
+            params={"speed": speed, "pumpId": pump_id},
+            return_json=False,
+        )
 
-    async def get_weather_forecast(self, pool_id: int) -> dict[str, Any]:
-        """Get weather forecast for a pool."""
-        return await self._request("GET", f"pools/{pool_id}/weather/forecast")
+    async def set_pump_forced(
+        self, device_id: int, mode: str, *, pump_id: int = 0
+    ) -> None:
+        """Set forced filtration mode (NotForced, Forced24H, Forced48H, Forced72H)."""
+        await self._request(
+            "POST",
+            f"/devices/{device_id}/interactions/pumpforced",
+            params={"forcedMode": mode, "pumpId": pump_id},
+            return_json=False,
+        )
+
+    async def set_valve_position(
+        self, device_id: int, position: str, *, filter_id: int = 0
+    ) -> None:
+        """Set valve position (Filter, Waste, Closed, Backwash, Bypass, Rinse)."""
+        await self._request(
+            "POST",
+            f"/devices/{device_id}/interactions/valveposition",
+            params={"valvePosition": position, "filterId": filter_id},
+            return_json=False,
+        )
+
+    async def set_auxiliary(
+        self,
+        device_id: int,
+        module: str,
+        aux_id: int,
+        *,
+        on: bool,
+    ) -> None:
+        """Set an auxiliary output on or off."""
+        await self._request(
+            "POST",
+            f"/devices/{device_id}/interactions/auxstate",
+            params={
+                "auxState": str(on).lower(),
+                "auxId": aux_id,
+                "module": module,
+            },
+            return_json=False,
+        )
+
+    async def set_heating_setpoint(
+        self,
+        device_id: int,
+        setpoint: float,
+        aux_id: int,
+        module: str = "None",
+    ) -> None:
+        """Set heating setpoint for an auxiliary."""
+        await self._request(
+            "POST",
+            f"/devices/{device_id}/interactions/heatingsetpoint",
+            params={
+                "heatingSetpoint": setpoint,
+                "auxId": aux_id,
+                "module": module,
+            },
+            return_json=False,
+        )
+
+    async def clear_alarm(self, device_id: int, alarm_code: str) -> None:
+        """Clear a specific alarm by code."""
+        await self._request(
+            "DELETE",
+            f"/devices/{device_id}/interactions/clearalarm",
+            params={"alarmCode": alarm_code},
+            return_json=False,
+        )
+
+    async def clear_all_alarms(self, device_id: int) -> None:
+        """Clear all active alarms."""
+        await self._request(
+            "DELETE",
+            f"/devices/{device_id}/interactions/clearalarms",
+            return_json=False,
+        )
 
     # ------------------------------------------------------------------
     # Session management
     # ------------------------------------------------------------------
 
     async def close(self) -> None:
-        """Close open client session."""
+        """Close the client session if we created it."""
         if self.session and self._close_session:
             await self.session.close()
-            self.session = None
 
     async def __aenter__(self) -> Self:
-        """Async enter."""
         return self
 
     async def __aexit__(self, *_exc_info: Any) -> None:
-        """Async exit."""
         await self.close()
+
+
+# Backwards-compatible alias
+PoolCopCloudAPI = PoolCopClientAPI

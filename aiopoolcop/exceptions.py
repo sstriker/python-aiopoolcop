@@ -1,27 +1,35 @@
-"""Exceptions for PoolCop Cloud API client."""
+"""Exceptions for PoolCop Client API."""
 
 from __future__ import annotations
 
 
-class PoolCopCloudError(Exception):
-    """Generic PoolCop Cloud API exception."""
+class PoolCopClientError(Exception):
+    """Generic PoolCop Client API exception."""
 
 
-class PoolCopCloudConnectionError(PoolCopCloudError):
-    """PoolCop Cloud API connection error."""
+class PoolCopClientConnectionError(PoolCopClientError):
+    """PoolCop Client API connection error."""
 
 
-class PoolCopCloudAuthError(PoolCopCloudError):
-    """PoolCop Cloud API authentication/authorization error."""
+class PoolCopClientAuthError(PoolCopClientError):
+    """PoolCop Client API authentication error (invalid API key)."""
 
 
-class PoolCopCloudNotFoundError(PoolCopCloudError):
-    """PoolCop Cloud API resource not found."""
+class PoolCopClientNotFoundError(PoolCopClientError):
+    """PoolCop Client API resource not found."""
 
 
-class PoolCopCloudRateLimitError(PoolCopCloudError):
-    """PoolCop Cloud API rate limit exceeded."""
+class PoolCopClientRateLimitError(PoolCopClientError):
+    """PoolCop Client API rate limit exceeded."""
 
     def __init__(self, message: str, *, retry_after: int | None = None) -> None:
         super().__init__(message)
         self.retry_after = retry_after
+
+
+# Backwards-compatible aliases for existing integrations
+PoolCopCloudError = PoolCopClientError
+PoolCopCloudConnectionError = PoolCopClientConnectionError
+PoolCopCloudAuthError = PoolCopClientAuthError
+PoolCopCloudNotFoundError = PoolCopClientNotFoundError
+PoolCopCloudRateLimitError = PoolCopClientRateLimitError

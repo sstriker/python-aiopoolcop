@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "aiopoolcop"
-version = "0.1.0"
-description = "Asynchronous Python client for the PoolCop Cloud API"
+version = "1.0.0"
+description = "Asynchronous Python client for the PoolCop Client API"
 authors = ["Sander Striker <s.striker@striker.nl>"]
 maintainers = ["Sander Striker <s.striker@striker.nl>"]
 license = "Apache-2.0"
@@ -9,7 +9,7 @@ readme = "README.md"
 homepage = "https://github.com/sstriker/python-aiopoolcop"
 repository = "https://github.com/sstriker/python-aiopoolcop"
 documentation = "https://github.com/sstriker/python-aiopoolcop"
-keywords = ["poolcop", "poolcopilot", "api", "async", "client"]
+keywords = ["poolcop", "pool", "api", "async", "client", "home-assistant"]
 classifiers = [
     "Framework :: AsyncIO",
     "Intended Audience :: Developers",
