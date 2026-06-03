@@ -146,6 +146,14 @@ class PoolCopClientAPI:
     # Device endpoints
     # ------------------------------------------------------------------
 
+    async def get_devices(self, *, page: int = 1) -> list[PoolCopDevice]:
+        """Get all devices the API key has access to (paginated)."""
+        data = await self._request(
+            "GET", "/devices", params={"page": page}
+        )
+        items = data.get("data", []) if isinstance(data, dict) else []
+        return [PoolCopDevice.from_dict(d) for d in items]
+
     async def get_device(self, device_id: int) -> PoolCopDevice:
         """Get a device with full state, settings, history, and equipments."""
         data = await self._request("GET", f"/devices/{device_id}")
@@ -239,6 +247,15 @@ class PoolCopClientAPI:
                 "auxId": aux_id,
                 "module": module,
             },
+            return_json=False,
+        )
+
+    async def set_jet_stream(self, device_id: int, *, on: bool) -> None:
+        """Turn the jet stream on or off."""
+        await self._request(
+            "POST",
+            f"/devices/{device_id}/interactions/jetstreamstate",
+            params={"jetStreamState": str(on).lower()},
             return_json=False,
         )
 

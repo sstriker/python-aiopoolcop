@@ -1,6 +1,7 @@
 """Tests for data models."""
 
 from aiopoolcop.models import (
+    AcoSettings,
     AuxSettings,
     AuxTimer,
     DeviceHistory,
@@ -8,7 +9,10 @@ from aiopoolcop.models import (
     DeviceSettings,
     DeviceState,
     DisinfectionSettings,
+    ElectrolyserSettings,
     EquipmentsInfo,
+    FacSettings,
+    FcSettings,
     FiltrationSettings,
     FiltrationTimer,
     FlowVisInfo,
@@ -21,6 +25,9 @@ from aiopoolcop.models import (
     PoolCoverInfo,
     PoolSettings,
     PumpInfo,
+    RemnantSettings,
+    SuctionValveSettings,
+    TcSettings,
     VersionInfo,
     WaterLevelInfo,
     WaterLevelSettings,
@@ -52,12 +59,19 @@ class TestPumpInfo:
 
 class TestWaterLevelInfo:
     def test_from_dict(self):
-        wl = WaterLevelInfo.from_dict(
-            {"installed": True, "state": "Normal", "setPoint": "High"}
-        )
+        wl = WaterLevelInfo.from_dict(DEVICE_RESPONSE["state"]["waterLevel"])
         assert wl.installed is True
         assert wl.state == "Normal"
         assert wl.set_point == "High"
+        assert wl.is_on_target is True
+        assert wl.is_on_error is False
+        assert wl.is_refilling is False
+        assert wl.is_measuring is False
+
+    def test_defaults(self):
+        wl = WaterLevelInfo.from_dict({})
+        assert wl.is_on_target is False
+        assert wl.is_on_error is False
 
 
 class TestPoolCoverInfo:
@@ -131,7 +145,17 @@ class TestFiltrationSettings:
         assert fs.filtration_mode == "Timer"
         assert fs.nb_speeds == "Speed3"
         assert fs.speed_cycle1 == "Speed1"
+        assert fs.speed_cycle3 == "Speed3"
+        assert fs.speed_cycle4 == "Speed3"
         assert fs.backwash_pressure == 144
+        assert fs.backwash_flow_rate == 15.0
+        assert fs.flow_rate_monitoring_speed == "Speed1"
+        assert fs.backwash_trigger == "Pressure"
+        assert fs.filtration_valve_type == "MultiPort"
+        assert fs.rinse_valve_type == "None"
+        assert fs.waste_line_valve == "None"
+        assert fs.current_cycle_elapsed_time == "01:30:00"
+        assert fs.current_cycle_remaining_time == "02:30:00"
         assert fs.pump_protection is True
         assert len(fs.timers) == 2
         assert fs.timers[0].enabled is True
@@ -146,8 +170,20 @@ class TestAuxSettings:
         assert aux.label == "TransferPump"
         assert aux.friendly_name == "Apf"
         assert aux.is_reserved is False
+        assert aux.is_heating_controlled is False
+        assert aux.is_heating is False
+        assert aux.heating_set_point == 0
+        assert aux.pulse_duration == "00:00:00"
+        assert aux.module_channel == 0
         assert aux.mode == "Manual"
         assert len(aux.timers) == 1
+
+    def test_is_heating_fallback(self):
+        aux = AuxSettings.from_dict(
+            {"id": "Aux1", "isHeating": True, "auxChannel": 1, "module": "None"}
+        )
+        assert aux.is_heating_controlled is True
+        assert aux.is_heating is True
 
 
 class TestAuxTimer:
@@ -174,6 +210,7 @@ class TestPhSettings:
         assert ph.set_point == 7.5
         assert ph.mode == "phMinus"
         assert ph.auto_adjust is True
+        assert ph.orp_protection is True
 
 
 class TestDisinfectionSettings:
@@ -182,8 +219,18 @@ class TestDisinfectionSettings:
             DEVICE_RESPONSE["settings"]["disinfection"]
         )
         assert dis.disinfectant_type == "Chlorine"
+        assert dis.mode == "ORP"
         assert dis.orp.set_point == 770
         assert dis.orp.installed is True
+        assert dis.orp.low_value == 500
+        assert dis.orp.high_value == 900
+        assert dis.orp.hyperchlorination_set_point == 850
+        assert dis.orp.hyperchlorination_weekday == "Monday"
+        assert dis.electrolyser.polarity_inversion_duration == 4
+        assert dis.electrolyser.production_percent == 80
+        assert dis.fac.installed is False
+        assert dis.fc.installed is False
+        assert dis.tc.low_value == 0
 
 
 class TestWaterLevelSettings:
@@ -195,6 +242,7 @@ class TestWaterLevelSettings:
         assert wl.set_point == "High"
         assert wl.can_refill is True
         assert wl.max_fill_duration == "01:20:00"
+        assert wl.reduction_threshold == 30
 
 
 class TestDeviceSettings:
@@ -206,12 +254,28 @@ class TestDeviceSettings:
         assert ds.water_level.installed is True
         assert len(ds.filtrations) == 1
         assert len(ds.auxs) == 1
+        assert ds.aco.installed is False
+        assert ds.remnant.installed is False
+        assert ds.remnant.mode == "Manual"
+        assert ds.suction_valve.type == "None"
 
     def test_from_dict_empty(self):
         ds = DeviceSettings.from_dict({})
         assert ds.pool.volume == 0.0
         assert ds.filtrations == []
         assert ds.auxs == []
+        assert ds.aco.installed is False
+        assert ds.remnant.installed is False
+        assert ds.suction_valve.type == "Standard"
+
+    def test_auxs_list_format(self):
+        ds = DeviceSettings.from_dict({
+            "auxs": [
+                {"id": "Aux1", "auxChannel": 1, "module": "None", "label": "Pump"},
+            ],
+        })
+        assert len(ds.auxs) == 1
+        assert ds.auxs[0].id == "Aux1"
 
 
 class TestEquipmentsInfo:
@@ -230,6 +294,8 @@ class TestDeviceHistory:
         assert h.last_refill_date == "2026-05-16T22:28:00"
         assert h.last_ph_measure_date == "2026-05-23T04:15:00"
         assert h.ph_last_injection_duration is None
+        assert h.aco_last_injection_duration is None
+        assert h.remnant_last_injection_duration is None
 
 
 class TestVersionInfo:
@@ -237,6 +303,7 @@ class TestVersionInfo:
         v = VersionInfo.from_dict(DEVICE_RESPONSE["versionInfo"])
         assert v.poolcop_version == "44.9.0"
         assert v.model == "Evolution"
+        assert v.os_version == "1.2.3"
 
 
 class TestPool:
@@ -280,6 +347,79 @@ class TestPoolCopDevice:
         assert device.id == 1
         assert device.state.ph == 0.0
         assert device.settings.pool.volume == 0.0
+
+
+class TestElectrolyserSettings:
+    def test_from_dict(self):
+        es = ElectrolyserSettings.from_dict(
+            {"polarityInversionDuration": 4, "productionPercent": 80}
+        )
+        assert es.polarity_inversion_duration == 4
+        assert es.production_percent == 80
+
+    def test_defaults(self):
+        es = ElectrolyserSettings.from_dict({})
+        assert es.polarity_inversion_duration == 0
+        assert es.production_percent == 0
+
+
+class TestFacSettings:
+    def test_from_dict(self):
+        fac = FacSettings.from_dict(
+            {"installed": True, "setPoint": 1.5, "lowValue": 0.5, "highValue": 3.0, "protection": True}
+        )
+        assert fac.installed is True
+        assert fac.set_point == 1.5
+        assert fac.protection is True
+
+
+class TestFcSettings:
+    def test_from_dict(self):
+        fc = FcSettings.from_dict(
+            {"installed": True, "setPoint": 1.0, "lowValue": 0.2, "highValue": 2.0}
+        )
+        assert fc.installed is True
+        assert fc.set_point == 1.0
+
+
+class TestTcSettings:
+    def test_from_dict(self):
+        tc = TcSettings.from_dict({"installed": True, "lowValue": 0, "highValue": 5})
+        assert tc.installed is True
+        assert tc.high_value == 5
+
+
+class TestAcoSettings:
+    def test_from_dict(self):
+        aco = AcoSettings.from_dict(
+            {"installed": True, "flowRate": 10, "module": "None", "aux": "Aux1"}
+        )
+        assert aco.installed is True
+        assert aco.flow_rate == 10
+
+
+class TestRemnantSettings:
+    def test_from_dict(self):
+        rem = RemnantSettings.from_dict(
+            {
+                "installed": True,
+                "flowRate": 5,
+                "module": "None",
+                "aux": "Aux2",
+                "temperatureCompensation": True,
+                "mode": "Auto",
+            }
+        )
+        assert rem.installed is True
+        assert rem.temperature_compensation is True
+        assert rem.mode == "Auto"
+
+
+class TestSuctionValveSettings:
+    def test_from_dict(self):
+        sv = SuctionValveSettings.from_dict({"type": "ThreeWay", "source": "Skimmer"})
+        assert sv.type == "ThreeWay"
+        assert sv.source == "Skimmer"
 
 
 class TestPoolCopCommand:

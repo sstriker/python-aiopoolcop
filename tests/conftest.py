@@ -46,7 +46,15 @@ DEVICE_RESPONSE = {
                 "pumpForcedRemaining": "00:00:00",
             }
         ],
-        "waterLevel": {"installed": True, "state": "Normal", "setPoint": "High"},
+        "waterLevel": {
+            "installed": True,
+            "state": "Normal",
+            "setPoint": "High",
+            "isOnTarget": True,
+            "isOnError": False,
+            "isRefilling": False,
+            "isMeasuring": False,
+        },
         "jetStream": {"installed": False, "isRunning": False},
         "poolCover": {
             "installed": True,
@@ -76,11 +84,42 @@ DEVICE_RESPONSE = {
             "autoAdjust": True,
             "mode": "phMinus",
             "maxDosingDuration": "00:10:00",
+            "orpProtection": True,
         },
         "disinfection": {
             "lowShutdownTemperature": 7,
             "disinfectantType": "Chlorine",
-            "orp": {"installed": True, "setPoint": 770},
+            "mode": "ORP",
+            "electrolyser": {
+                "polarityInversionDuration": 4,
+                "productionPercent": 80,
+            },
+            "orp": {
+                "installed": True,
+                "setPoint": 770,
+                "lowValue": 500,
+                "highValue": 900,
+                "hyperchlorationSetPoint": 850,
+                "hyperchlorationWeekday": "Monday",
+            },
+            "fac": {
+                "installed": False,
+                "setPoint": 0,
+                "lowValue": 0,
+                "highValue": 0,
+                "protection": False,
+            },
+            "fc": {
+                "installed": False,
+                "setPoint": 0,
+                "lowValue": 0,
+                "highValue": 0,
+            },
+            "tc": {
+                "installed": False,
+                "lowValue": 0,
+                "highValue": 0,
+            },
         },
         "waterLevel": {
             "installed": True,
@@ -90,6 +129,7 @@ DEVICE_RESPONSE = {
             "maxFillDuration": "01:20:00",
             "drainingDuration": "00:10:00",
             "continuousFill": False,
+            "reductionThreshold": 30,
         },
         "filtrations": [
             {
@@ -99,10 +139,20 @@ DEVICE_RESPONSE = {
                 "nbSpeeds": "Speed3",
                 "speedCycle1": "Speed1",
                 "speedCycle2": "Speed2",
+                "speedCycle3": "Speed3",
+                "speedCycle4": "Speed3",
                 "speedBackwash": "Speed3",
                 "speed24": "Speed1",
                 "coverFiltrationSpeed": "Speed1",
                 "coverFiltrationReduction": 5,
+                "backwashFlowRate": 15.0,
+                "flowRateMonitoringSpeed": "Speed1",
+                "backwashTrigger": "Pressure",
+                "filtrationValveType": "MultiPort",
+                "rinseValveType": "None",
+                "wasteLineValve": "None",
+                "currentCycleElapsedTime": "01:30:00",
+                "currentCycleRemainingTime": "02:30:00",
                 "backwashPressure": 144,
                 "backwashDuration": "00:02:30",
                 "backwashTime": "11:00:00",
@@ -133,11 +183,32 @@ DEVICE_RESPONSE = {
                     "slavedTo": "NotSlave",
                     "mode": "Manual",
                     "isReserved": False,
-                    "isHeating": False,
+                    "isHeatingControlled": False,
+                    "heatingSetPoint": 0,
+                    "pulseDuration": "00:00:00",
+                    "moduleChannel": 0,
                     "daysOfWeek": [],
                     "timers": [{"id": 1, "timeOn": "00:00:00", "timeOff": "00:00:00"}],
                 }
             }
+        },
+        "aco": {
+            "installed": False,
+            "flowRate": 0,
+            "module": "None",
+            "aux": "Aux1",
+        },
+        "remnant": {
+            "installed": False,
+            "flowRate": 0,
+            "module": "None",
+            "aux": "Aux1",
+            "temperatureCompensation": False,
+            "mode": "Manual",
+        },
+        "suctionValve": {
+            "type": "None",
+            "source": "None",
         },
     },
     "equipmentsInfo": {
@@ -158,11 +229,17 @@ DEVICE_RESPONSE = {
     "history": {
         "pHLastInjectionDuration": None,
         "disinfectionLastInjectionDuration": None,
+        "acoLastInjectionDuration": None,
+        "remnantLastInjectionDuration": None,
         "lastpHMeasureDate": "2026-05-23T04:15:00",
         "lastRefillDate": "2026-05-16T22:28:00",
         "lastBackwashDate": "2026-05-16T11:03:00",
     },
-    "versionInfo": {"poolCopVersion": "44.9.0", "model": "Evolution"},
+    "versionInfo": {
+        "poolCopVersion": "44.9.0",
+        "model": "Evolution",
+        "osVersion": "1.2.3",
+    },
 }
 
 POOLS_RESPONSE = {

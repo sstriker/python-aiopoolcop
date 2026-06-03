@@ -163,6 +163,24 @@ class TestPools:
 class TestDevice:
     """Test device endpoints."""
 
+    async def test_get_devices(self, api: PoolCopClientAPI, mock_api: aioresponses):
+        paginated = {
+            "currentPage": 1,
+            "pageSize": 100,
+            "totalCount": 1,
+            "totalPages": 1,
+            "hasPreviousPage": False,
+            "hasNextPage": False,
+            "data": [DEVICE_RESPONSE],
+        }
+        mock_api.get(
+            re.compile(rf"{re.escape(BASE_URL)}/devices(\?.*)?$"),
+            payload=paginated,
+        )
+        devices = await api.get_devices()
+        assert len(devices) == 1
+        assert devices[0].id == 2478
+
     async def test_get_device(self, api: PoolCopClientAPI, mock_api: aioresponses):
         mock_api.get(f"{BASE_URL}/devices/2478", payload=DEVICE_RESPONSE)
         device = await api.get_device(2478)
@@ -289,6 +307,17 @@ class TestInteractions:
             status=202,
         )
         await api.set_heating_setpoint(2478, 28.5, aux_id=4)
+
+    async def test_set_jet_stream(
+        self, api: PoolCopClientAPI, mock_api: aioresponses
+    ):
+        mock_api.post(
+            re.compile(
+                rf"{re.escape(BASE_URL)}/devices/2478/interactions/jetstreamstate"
+            ),
+            status=202,
+        )
+        await api.set_jet_stream(2478, on=True)
 
     async def test_clear_alarm(self, api: PoolCopClientAPI, mock_api: aioresponses):
         mock_api.delete(
