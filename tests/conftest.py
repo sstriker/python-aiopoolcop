@@ -164,8 +164,18 @@ DEVICE_RESPONSE = {
                 "pumpProtection": True,
                 "filterType": "Pressure",
                 "timers": [
-                    {"id": 1, "enabled": True, "timeOn": "23:59:00", "timeOff": "04:00:00"},
-                    {"id": 2, "enabled": True, "timeOn": "08:00:00", "timeOff": "21:59:00"},
+                    {
+                        "id": 1,
+                        "enabled": True,
+                        "timeOn": "23:59:00",
+                        "timeOff": "04:00:00",
+                    },
+                    {
+                        "id": 2,
+                        "enabled": True,
+                        "timeOn": "08:00:00",
+                        "timeOff": "21:59:00",
+                    },
                 ],
             }
         ],

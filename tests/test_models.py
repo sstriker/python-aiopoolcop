@@ -17,7 +17,6 @@ from aiopoolcop.models import (
     FiltrationTimer,
     FlowVisInfo,
     JetStreamInfo,
-    OrpSettings,
     PhSettings,
     Pool,
     PoolCopCommand,
@@ -188,9 +187,7 @@ class TestAuxSettings:
 
 class TestAuxTimer:
     def test_from_dict(self):
-        t = AuxTimer.from_dict(
-            {"id": 1, "timeOn": "10:00:00", "timeOff": "12:00:00"}
-        )
+        t = AuxTimer.from_dict({"id": 1, "timeOn": "10:00:00", "timeOff": "12:00:00"})
         assert t.time_on == "10:00:00"
 
 
@@ -235,9 +232,7 @@ class TestDisinfectionSettings:
 
 class TestWaterLevelSettings:
     def test_from_dict(self):
-        wl = WaterLevelSettings.from_dict(
-            DEVICE_RESPONSE["settings"]["waterLevel"]
-        )
+        wl = WaterLevelSettings.from_dict(DEVICE_RESPONSE["settings"]["waterLevel"])
         assert wl.installed is True
         assert wl.set_point == "High"
         assert wl.can_refill is True
@@ -269,11 +264,13 @@ class TestDeviceSettings:
         assert ds.suction_valve.type == "Standard"
 
     def test_auxs_list_format(self):
-        ds = DeviceSettings.from_dict({
-            "auxs": [
-                {"id": "Aux1", "auxChannel": 1, "module": "None", "label": "Pump"},
-            ],
-        })
+        ds = DeviceSettings.from_dict(
+            {
+                "auxs": [
+                    {"id": "Aux1", "auxChannel": 1, "module": "None", "label": "Pump"},
+                ],
+            }
+        )
         assert len(ds.auxs) == 1
         assert ds.auxs[0].id == "Aux1"
 
@@ -366,7 +363,13 @@ class TestElectrolyserSettings:
 class TestFacSettings:
     def test_from_dict(self):
         fac = FacSettings.from_dict(
-            {"installed": True, "setPoint": 1.5, "lowValue": 0.5, "highValue": 3.0, "protection": True}
+            {
+                "installed": True,
+                "setPoint": 1.5,
+                "lowValue": 0.5,
+                "highValue": 3.0,
+                "protection": True,
+            }
         )
         assert fac.installed is True
         assert fac.set_point == 1.5

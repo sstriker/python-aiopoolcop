@@ -81,7 +81,7 @@ class PoolCopClientAPI:
                     headers=headers,
                     params=params,
                 )
-        except asyncio.TimeoutError as err:
+        except TimeoutError as err:
             msg = "Timeout connecting to PoolCop Client API"
             raise PoolCopClientConnectionError(msg) from err
         except (ClientError, socket.gaierror) as err:
@@ -148,9 +148,7 @@ class PoolCopClientAPI:
 
     async def get_devices(self, *, page: int = 1) -> list[PoolCopDevice]:
         """Get all devices the API key has access to (paginated)."""
-        data = await self._request(
-            "GET", "/devices", params={"page": page}
-        )
+        data = await self._request("GET", "/devices", params={"page": page})
         items = data.get("data", []) if isinstance(data, dict) else []
         return [PoolCopDevice.from_dict(d) for d in items]
 

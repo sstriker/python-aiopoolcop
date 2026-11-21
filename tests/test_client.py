@@ -257,22 +257,16 @@ class TestInteractions:
         )
         await api.set_pump(2478, on=True)
 
-    async def test_set_pump_speed(
-        self, api: PoolCopClientAPI, mock_api: aioresponses
-    ):
+    async def test_set_pump_speed(self, api: PoolCopClientAPI, mock_api: aioresponses):
         mock_api.post(
             re.compile(rf"{re.escape(BASE_URL)}/devices/2478/interactions/pumpspeed"),
             status=202,
         )
         await api.set_pump_speed(2478, "Speed2")
 
-    async def test_set_pump_forced(
-        self, api: PoolCopClientAPI, mock_api: aioresponses
-    ):
+    async def test_set_pump_forced(self, api: PoolCopClientAPI, mock_api: aioresponses):
         mock_api.post(
-            re.compile(
-                rf"{re.escape(BASE_URL)}/devices/2478/interactions/pumpforced"
-            ),
+            re.compile(rf"{re.escape(BASE_URL)}/devices/2478/interactions/pumpforced"),
             status=202,
         )
         await api.set_pump_forced(2478, "Forced24H")
@@ -288,9 +282,7 @@ class TestInteractions:
         )
         await api.set_valve_position(2478, "Backwash")
 
-    async def test_set_auxiliary(
-        self, api: PoolCopClientAPI, mock_api: aioresponses
-    ):
+    async def test_set_auxiliary(self, api: PoolCopClientAPI, mock_api: aioresponses):
         mock_api.post(
             re.compile(rf"{re.escape(BASE_URL)}/devices/2478/interactions/auxstate"),
             status=202,
@@ -308,9 +300,7 @@ class TestInteractions:
         )
         await api.set_heating_setpoint(2478, 28.5, aux_id=4)
 
-    async def test_set_jet_stream(
-        self, api: PoolCopClientAPI, mock_api: aioresponses
-    ):
+    async def test_set_jet_stream(self, api: PoolCopClientAPI, mock_api: aioresponses):
         mock_api.post(
             re.compile(
                 rf"{re.escape(BASE_URL)}/devices/2478/interactions/jetstreamstate"
@@ -330,9 +320,7 @@ class TestInteractions:
         self, api: PoolCopClientAPI, mock_api: aioresponses
     ):
         mock_api.delete(
-            re.compile(
-                rf"{re.escape(BASE_URL)}/devices/2478/interactions/clearalarms"
-            ),
+            re.compile(rf"{re.escape(BASE_URL)}/devices/2478/interactions/clearalarms"),
             status=202,
         )
         await api.clear_all_alarms(2478)

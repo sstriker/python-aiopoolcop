@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # State sub-models
 # ---------------------------------------------------------------------------
@@ -291,16 +290,12 @@ class FiltrationSettings:
             cover_filtration_reduction=data.get("coverFiltrationReduction", 0),
             backwash_pressure=data.get("backwashPressure", 0.0),
             backwash_flow_rate=data.get("backwashFlowRate", 0.0),
-            flow_rate_monitoring_speed=str(
-                data.get("flowRateMonitoringSpeed", "None")
-            ),
+            flow_rate_monitoring_speed=str(data.get("flowRateMonitoringSpeed", "None")),
             backwash_duration=data.get("backwashDuration", "00:00:00"),
             backwash_time=data.get("backwashTime", "00:00:00"),
             backwash_mode=data.get("backwashMode", "Automatic"),
             backwash_trigger=data.get("backwashTrigger", "Pressure"),
-            max_interval_between_backwash=data.get(
-                "maxIntervalBetweenBackwash", ""
-            ),
+            max_interval_between_backwash=data.get("maxIntervalBetweenBackwash", ""),
             rinse_duration=data.get("rinseDuration", "00:00:00"),
             alarm_pressure=data.get("alarmPressure", 0.0),
             low_pressure=data.get("lowPressure", 0.0),
@@ -541,9 +536,7 @@ class DisinfectionSettings:
     disinfectant_type: str = "ReadOnly"
     mode: str = "None"
     orp: OrpSettings = field(default_factory=OrpSettings)
-    electrolyser: ElectrolyserSettings = field(
-        default_factory=ElectrolyserSettings
-    )
+    electrolyser: ElectrolyserSettings = field(default_factory=ElectrolyserSettings)
     fac: FacSettings = field(default_factory=FacSettings)
     fc: FcSettings = field(default_factory=FcSettings)
     tc: TcSettings = field(default_factory=TcSettings)
@@ -661,9 +654,7 @@ class DeviceSettings:
     water_level: WaterLevelSettings = field(default_factory=WaterLevelSettings)
     aco: AcoSettings = field(default_factory=AcoSettings)
     remnant: RemnantSettings = field(default_factory=RemnantSettings)
-    suction_valve: SuctionValveSettings = field(
-        default_factory=SuctionValveSettings
-    )
+    suction_valve: SuctionValveSettings = field(default_factory=SuctionValveSettings)
     filtrations: list[FiltrationSettings] = field(default_factory=list)
     auxs: list[AuxSettings] = field(default_factory=list)
 
@@ -772,9 +763,7 @@ class DeviceHistory:
                 "disinfectionLastInjectionDuration"
             ),
             aco_last_injection_duration=data.get("acoLastInjectionDuration"),
-            remnant_last_injection_duration=data.get(
-                "remnantLastInjectionDuration"
-            ),
+            remnant_last_injection_duration=data.get("remnantLastInjectionDuration"),
         )
 
 
