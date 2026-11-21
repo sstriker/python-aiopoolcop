@@ -1,541 +1,445 @@
 """Tests for data models."""
 
 from aiopoolcop.models import (
-    DataPoint,
-    DisconnectionTime,
+    AcoSettings,
+    AuxSettings,
+    AuxTimer,
+    DeviceHistory,
+    DeviceMinimalistic,
+    DeviceSettings,
+    DeviceState,
+    DisinfectionSettings,
+    ElectrolyserSettings,
+    EquipmentsInfo,
+    FacSettings,
+    FcSettings,
+    FiltrationSettings,
+    FiltrationTimer,
     FlowVisInfo,
     JetStreamInfo,
+    PhSettings,
     Pool,
-    PoolCopAlarm,
-    PoolCopAuxiliary,
     PoolCopCommand,
     PoolCopDevice,
-    PoolCopState,
-    PoolCopSummary,
     PoolCoverInfo,
+    PoolSettings,
     PumpInfo,
-    UserProfile,
+    RemnantSettings,
+    SuctionValveSettings,
+    TcSettings,
+    VersionInfo,
     WaterLevelInfo,
-    WeatherCondition,
-    _parse_auxiliaries,
-    _parse_inputs,
+    WaterLevelSettings,
 )
 
-
-class TestPoolCopAlarm:
-    def test_from_dict(self):
-        data = {
-            "id": 1,
-            "poolCopId": 42,
-            "code": "A001",
-            "severity": "Warning",
-            "label": "Low pressure",
-            "description": "Pump pressure below threshold",
-            "startDate": "2026-01-15T10:00:00Z",
-            "endDate": None,
-        }
-        alarm = PoolCopAlarm.from_dict(data)
-        assert alarm.id == 1
-        assert alarm.pool_cop_id == 42
-        assert alarm.code == "A001"
-        assert alarm.severity == "Warning"
-        assert alarm.label == "Low pressure"
-        assert alarm.start_date == "2026-01-15T10:00:00Z"
-        assert alarm.end_date is None
-
-    def test_is_active_when_no_end_date(self):
-        alarm = PoolCopAlarm(id=1, pool_cop_id=42)
-        assert alarm.is_active is True
-
-    def test_is_not_active_when_end_date(self):
-        alarm = PoolCopAlarm(id=1, pool_cop_id=42, end_date="2026-01-15T12:00:00Z")
-        assert alarm.is_active is False
-
-    def test_from_dict_defaults(self):
-        alarm = PoolCopAlarm.from_dict({})
-        assert alarm.id == 0
-        assert alarm.pool_cop_id == 0
-        assert alarm.code is None
-        assert alarm.severity == "Warning"
-        assert alarm.label is None
-        assert alarm.description is None
-        assert alarm.start_date is None
-        assert alarm.end_date is None
+from .conftest import DEVICE_RESPONSE, POOL_RESPONSE
 
 
 class TestPumpInfo:
     def test_from_dict(self):
-        data = {
-            "id": 1,
-            "pumpCurrentSpeed": "Speed3",
-            "pumpForcedRemaining": "02:00:00",
-            "pumpPressure": 1.5,
-            "runningStatus": "Forced",
-            "pumpState": True,
-            "pumpPrimed": True,
-            "valvePosition": "Waste",
-        }
+        data = DEVICE_RESPONSE["state"]["pumpsInfo"][0]
         pump = PumpInfo.from_dict(data)
-        assert pump.id == 1
-        assert pump.current_speed == "Speed3"
-        assert pump.forced_remaining == "02:00:00"
-        assert pump.pressure == 1.5
-        assert pump.running_status == "Forced"
-        assert pump.pump_state is True
-        assert pump.pump_primed is True
-        assert pump.valve_position == "Waste"
-
-    def test_from_dict_defaults(self):
-        pump = PumpInfo.from_dict({})
         assert pump.id == 0
-        assert pump.current_speed == "None"
-        assert pump.forced_remaining == "00:00:00"
-        assert pump.running_status == "Stop"
-        assert pump.pump_state is False
-        assert pump.pump_primed is False
+        assert pump.current_speed == "Speed1"
+        assert pump.running_status == "TimerMode"
+        assert pump.filtration_mode == "Timer"
+        assert pump.number_of_speeds == "Speed3"
+        assert pump.pump_state is True
         assert pump.valve_position == "Filter"
-        assert pump.pressure == 0.0
+        assert pump.pressure == 76.5
+        assert pump.forced_remaining == "00:00:00"
+
+    def test_defaults(self):
+        pump = PumpInfo.from_dict({})
+        assert pump.pump_state is False
+        assert pump.running_status == "Stopped"
+        assert pump.current_speed == "None"
 
 
 class TestWaterLevelInfo:
     def test_from_dict(self):
-        data = {
-            "installed": True,
-            "state": "Low",
-            "setPoint": "High",
-            "isOnTarget": False,
-            "isOnError": True,
-        }
-        wl = WaterLevelInfo.from_dict(data)
+        wl = WaterLevelInfo.from_dict(DEVICE_RESPONSE["state"]["waterLevel"])
         assert wl.installed is True
-        assert wl.state == "Low"
-        assert wl.set_point == "High"
-        assert wl.is_on_target is False
-        assert wl.is_on_error is True
-
-    def test_from_dict_defaults(self):
-        wl = WaterLevelInfo.from_dict({})
-        assert wl.installed is False
         assert wl.state == "Normal"
-        assert wl.set_point == "Unknown"
-        assert wl.is_on_target is None
-        assert wl.is_on_error is None
+        assert wl.set_point == "High"
+        assert wl.is_on_target is True
+        assert wl.is_on_error is False
+        assert wl.is_refilling is False
+        assert wl.is_measuring is False
+
+    def test_defaults(self):
+        wl = WaterLevelInfo.from_dict({})
+        assert wl.is_on_target is False
+        assert wl.is_on_error is False
 
 
 class TestPoolCoverInfo:
     def test_from_dict(self):
-        data = {
-            "installed": True,
-            "controllable": True,
-            "isClosing": True,
-            "isOpening": False,
-            "isStopped": False,
-            "isOpen": False,
-        }
-        cover = PoolCoverInfo.from_dict(data)
-        assert cover.installed is True
-        assert cover.controllable is True
-        assert cover.is_closing is True
-        assert cover.is_opening is False
-        assert cover.is_stopped is False
-        assert cover.is_open is False
-
-    def test_from_dict_defaults(self):
-        cover = PoolCoverInfo.from_dict({})
-        assert cover.installed is False
-        assert cover.controllable is False
-        assert cover.is_stopped is True
+        pc = PoolCoverInfo.from_dict(DEVICE_RESPONSE["state"]["poolCover"])
+        assert pc.installed is True
+        assert pc.controllable is False
+        assert pc.is_open is False
+        assert pc.is_stopped is True
 
 
 class TestJetStreamInfo:
     def test_from_dict(self):
-        info = JetStreamInfo.from_dict({"installed": True, "isRunning": True})
-        assert info.installed is True
-        assert info.is_running is True
-
-    def test_from_dict_defaults(self):
-        info = JetStreamInfo.from_dict({})
-        assert info.installed is False
-        assert info.is_running is False
+        js = JetStreamInfo.from_dict({"installed": False, "isRunning": False})
+        assert js.installed is False
+        assert js.is_running is False
 
 
 class TestFlowVisInfo:
     def test_from_dict(self):
-        data = {
-            "installed": True,
-            "pumpId": 1,
-            "lowValue": 5.0,
-            "highValue": 15.0,
-            "flowRate": 10.5,
-        }
-        fv = FlowVisInfo.from_dict(data)
+        fv = FlowVisInfo.from_dict(
+            {"installed": True, "pumpId": 1, "flowRate": 10.5, "type": "FV2"}
+        )
         assert fv.installed is True
-        assert fv.pump_id == 1
-        assert fv.low_value == 5.0
-        assert fv.high_value == 15.0
         assert fv.flow_rate == 10.5
-
-    def test_from_dict_defaults(self):
-        fv = FlowVisInfo.from_dict({})
-        assert fv.installed is False
-        assert fv.flow_rate == 0.0
+        assert fv.type == "FV2"
 
 
-class TestParseAuxiliaries:
-    def test_parse_merged_auxiliaries(self):
-        data = {
-            "auxiliaries": {
-                "None": {"None": False, "Aux1": True},
-                "AuxModule1": {"None": False, "Aux1": False, "Aux2": True},
-            }
-        }
-        result = _parse_auxiliaries(data)
-        assert "AuxModule1" in result
-        assert result["AuxModule1"]["Aux2"] is True
-        assert "None" not in result
-
-    def test_parse_uf_legacy_fallback(self):
-        data = {
-            "auxiliaries": None,
-            "auxiliariesUFLegacy": {
-                "None": {"Aux1": True},
-                "AuxModule1": {"Aux1": False},
-            },
-        }
-        result = _parse_auxiliaries(data)
-        assert "AuxModule1" in result
-
-    def test_parse_satellite_fallback(self):
-        data = {
-            "auxiliaries": None,
-            "auxiliariesSatellite": {
-                "None": {"Aux1": True},
-                "AuxModule2": {"Aux1": True},
-            },
-        }
-        result = _parse_auxiliaries(data)
-        assert "AuxModule2" in result
-
-    def test_parse_empty(self):
-        result = _parse_auxiliaries({})
-        assert result == {}
-
-
-class TestParseInputs:
-    def test_parse_merged_inputs(self):
-        data = {"inputs": {"None": False, "Input1": True, "Input2": False}}
-        result = _parse_inputs(data)
-        assert result == {"Input1": True, "Input2": False}
-
-    def test_parse_uf_legacy_fallback(self):
-        data = {
-            "inputs": None,
-            "inputsUFLegacy": {"None": False, "Input1": True},
-        }
-        result = _parse_inputs(data)
-        assert result == {"Input1": True}
-
-    def test_parse_satellite_fallback(self):
-        data = {
-            "inputs": None,
-            "inputsSatellite": {"None": False, "Input1": True},
-        }
-        result = _parse_inputs(data)
-        assert result == {"Input1": True}
-
-    def test_parse_empty(self):
-        result = _parse_inputs({})
-        assert result == {}
-
-
-class TestPoolCopState:
+class TestDeviceState:
     def test_from_dict_full(self):
-        data = {
-            "status": "Ready",
-            "pumpsInfo": [
-                {
-                    "id": 1,
-                    "pumpCurrentSpeed": "Speed2",
-                    "runningStatus": "Auto",
-                    "pumpState": True,
-                    "pumpPrimed": True,
-                    "valvePosition": "Filter",
-                    "pumpPressure": 1.2,
-                }
-            ],
-            "pH": 7.2,
-            "orp": 650,
-            "waterTemperature": 26.5,
-            "dailyAverageWaterTemperature": 25.0,
-            "airTemperature": 30.0,
-            "batteryVoltage": 12.6,
-            "mainsVoltage": 230.0,
-            "mainsPowerLost": False,
-            "freeAvailableChlorine": 1.5,
-            "freeChlorine": 0.8,
-            "totalChlorine": 1.2,
-            "waterLevel": {"installed": True, "state": "Normal"},
-            "poolCover": {"installed": True, "controllable": True},
-            "jetStream": {"installed": False},
-            "flowVis": [{"installed": True, "pumpId": 1, "flowRate": 10.0}],
-            "auxiliaries": {"AuxModule1": {"Aux1": True}},
-            "inputs": {"Input1": True},
-            "dateTime": "2026-01-15T12:00:00Z",
-        }
-        state = PoolCopState.from_dict(data)
-        assert state.status == "Ready"
+        state = DeviceState.from_dict(DEVICE_RESPONSE["state"])
+        assert state.ph == 7.5
+        assert state.orp == 810
+        assert state.water_temperature == 27.2
+        assert state.air_temperature == 27
+        assert state.battery_voltage == 14.4
+        assert state.mains_voltage == 187
+        assert state.salt == 0
+        assert state.service_mode is False
+        assert state.ph_dosing is False
+        assert state.disinfection_dosing is False
+        assert state.alarms == ["PressureLowPump1"]
         assert len(state.pumps) == 1
-        assert state.pumps[0].current_speed == "Speed2"
-        assert state.ph == 7.2
-        assert state.orp == 650
-        assert state.water_temperature == 26.5
         assert state.water_level.installed is True
-        assert state.pool_cover.installed is True
-        assert state.jet_stream.installed is False
-        assert len(state.flow_vis) == 1
-        assert state.flow_vis[0].flow_rate == 10.0
-        assert state.auxiliaries["AuxModule1"]["Aux1"] is True
-        assert state.inputs["Input1"] is True
-        assert state.date_time == "2026-01-15T12:00:00Z"
+        assert state.inputs == {"Input1": True, "Input2": False}
+        assert state.auxiliaries == {"None": {"Aux1": True, "Aux2": False}}
 
     def test_from_dict_minimal(self):
-        state = PoolCopState.from_dict({})
-        assert state.status == "Ready"
-        assert state.pumps == []
+        state = DeviceState.from_dict({})
         assert state.ph == 0.0
-        assert state.orp == 0
-        assert state.water_level.installed is False
-        assert state.auxiliaries == {}
-        assert state.inputs == {}
-
-    def test_from_dict_none_sub_objects(self):
-        data = {
-            "pumpsInfo": None,
-            "waterLevel": None,
-            "poolCover": None,
-            "jetStream": None,
-            "flowVis": None,
-        }
-        state = PoolCopState.from_dict(data)
+        assert state.alarms == []
         assert state.pumps == []
-        assert state.water_level.installed is False
-        assert state.flow_vis == []
+        assert state.auxiliaries == {}
 
 
-class TestPoolCopSummary:
+class TestFiltrationTimer:
     def test_from_dict(self):
-        data = {
-            "id": 42,
-            "nickname": "My PoolCop",
-            "uuid": "abc-123",
-            "mac": "AA:BB:CC:DD:EE:FF",
-            "poolId": 10,
-            "userId": 5,
-            "isConnected": True,
-            "isFullyConnected": True,
-            "connectionDate": "2025-06-01T08:00:00Z",
-        }
-        summary = PoolCopSummary.from_dict(data)
-        assert summary.id == 42
-        assert summary.nickname == "My PoolCop"
-        assert summary.uuid == "abc-123"
-        assert summary.mac == "AA:BB:CC:DD:EE:FF"
-        assert summary.pool_id == 10
-        assert summary.is_connected is True
-
-    def test_from_dict_defaults(self):
-        summary = PoolCopSummary.from_dict({})
-        assert summary.id == 0
-        assert summary.nickname is None
-        assert summary.is_connected is False
+        t = FiltrationTimer.from_dict(
+            {"id": 1, "enabled": True, "timeOn": "08:00:00", "timeOff": "12:00:00"}
+        )
+        assert t.enabled is True
+        assert t.time_on == "08:00:00"
+        assert t.time_off == "12:00:00"
 
 
-class TestPoolCopDevice:
+class TestFiltrationSettings:
     def test_from_dict(self):
-        data = {
-            "id": 42,
-            "nickname": "My PoolCop",
-            "isConnected": True,
-            "state": {
-                "pH": 7.4,
-                "orp": 700,
-                "waterTemperature": 28.0,
-            },
-        }
-        device = PoolCopDevice.from_dict(data)
-        assert device.id == 42
-        assert device.nickname == "My PoolCop"
-        assert device.is_connected is True
-        assert device.state.ph == 7.4
-        assert device.state.orp == 700
+        data = DEVICE_RESPONSE["settings"]["filtrations"][0]
+        fs = FiltrationSettings.from_dict(data)
+        assert fs.pump_type == "BaduEcoTouch"
+        assert fs.filtration_mode == "Timer"
+        assert fs.nb_speeds == "Speed3"
+        assert fs.speed_cycle1 == "Speed1"
+        assert fs.speed_cycle3 == "Speed3"
+        assert fs.speed_cycle4 == "Speed3"
+        assert fs.backwash_pressure == 144
+        assert fs.backwash_flow_rate == 15.0
+        assert fs.flow_rate_monitoring_speed == "Speed1"
+        assert fs.backwash_trigger == "Pressure"
+        assert fs.filtration_valve_type == "MultiPort"
+        assert fs.rinse_valve_type == "None"
+        assert fs.waste_line_valve == "None"
+        assert fs.current_cycle_elapsed_time == "01:30:00"
+        assert fs.current_cycle_remaining_time == "02:30:00"
+        assert fs.pump_protection is True
+        assert len(fs.timers) == 2
+        assert fs.timers[0].enabled is True
 
-    def test_from_dict_no_state(self):
-        device = PoolCopDevice.from_dict({"id": 1})
-        assert device.state.status == "Ready"
+
+class TestAuxSettings:
+    def test_from_dict(self):
+        data = DEVICE_RESPONSE["settings"]["auxs"]["None"]["Aux4"]
+        aux = AuxSettings.from_dict(data)
+        assert aux.id == "Aux4"
+        assert aux.aux_channel == 4
+        assert aux.label == "TransferPump"
+        assert aux.friendly_name == "Apf"
+        assert aux.is_reserved is False
+        assert aux.is_heating_controlled is False
+        assert aux.is_heating is False
+        assert aux.heating_set_point == 0
+        assert aux.pulse_duration == "00:00:00"
+        assert aux.module_channel == 0
+        assert aux.mode == "Manual"
+        assert len(aux.timers) == 1
+
+    def test_is_heating_fallback(self):
+        aux = AuxSettings.from_dict(
+            {"id": "Aux1", "isHeating": True, "auxChannel": 1, "module": "None"}
+        )
+        assert aux.is_heating_controlled is True
+        assert aux.is_heating is True
+
+
+class TestAuxTimer:
+    def test_from_dict(self):
+        t = AuxTimer.from_dict({"id": 1, "timeOn": "10:00:00", "timeOff": "12:00:00"})
+        assert t.time_on == "10:00:00"
+
+
+class TestPoolSettings:
+    def test_from_dict(self):
+        ps = PoolSettings.from_dict(DEVICE_RESPONSE["settings"]["pool"])
+        assert ps.volume == 77
+        assert ps.type == "RimflowTypeB"
+        assert ps.freeze_protection is False
+        assert ps.turnover_per_day == 1
+
+
+class TestPhSettings:
+    def test_from_dict(self):
+        ph = PhSettings.from_dict(DEVICE_RESPONSE["settings"]["pH"])
+        assert ph.installed is True
+        assert ph.set_point == 7.5
+        assert ph.mode == "phMinus"
+        assert ph.auto_adjust is True
+        assert ph.orp_protection is True
+
+
+class TestDisinfectionSettings:
+    def test_from_dict(self):
+        dis = DisinfectionSettings.from_dict(
+            DEVICE_RESPONSE["settings"]["disinfection"]
+        )
+        assert dis.disinfectant_type == "Chlorine"
+        assert dis.mode == "ORP"
+        assert dis.orp.set_point == 770
+        assert dis.orp.installed is True
+        assert dis.orp.low_value == 500
+        assert dis.orp.high_value == 900
+        assert dis.orp.hyperchlorination_set_point == 850
+        assert dis.orp.hyperchlorination_weekday == "Monday"
+        assert dis.electrolyser.polarity_inversion_duration == 4
+        assert dis.electrolyser.production_percent == 80
+        assert dis.fac.installed is False
+        assert dis.fc.installed is False
+        assert dis.tc.low_value == 0
+
+
+class TestWaterLevelSettings:
+    def test_from_dict(self):
+        wl = WaterLevelSettings.from_dict(DEVICE_RESPONSE["settings"]["waterLevel"])
+        assert wl.installed is True
+        assert wl.set_point == "High"
+        assert wl.can_refill is True
+        assert wl.max_fill_duration == "01:20:00"
+        assert wl.reduction_threshold == 30
+
+
+class TestDeviceSettings:
+    def test_from_dict(self):
+        ds = DeviceSettings.from_dict(DEVICE_RESPONSE["settings"])
+        assert ds.pool.volume == 77
+        assert ds.ph.set_point == 7.5
+        assert ds.disinfection.orp.set_point == 770
+        assert ds.water_level.installed is True
+        assert len(ds.filtrations) == 1
+        assert len(ds.auxs) == 1
+        assert ds.aco.installed is False
+        assert ds.remnant.installed is False
+        assert ds.remnant.mode == "Manual"
+        assert ds.suction_valve.type == "None"
+
+    def test_from_dict_empty(self):
+        ds = DeviceSettings.from_dict({})
+        assert ds.pool.volume == 0.0
+        assert ds.filtrations == []
+        assert ds.auxs == []
+        assert ds.aco.installed is False
+        assert ds.remnant.installed is False
+        assert ds.suction_valve.type == "Standard"
+
+    def test_auxs_list_format(self):
+        ds = DeviceSettings.from_dict(
+            {
+                "auxs": [
+                    {"id": "Aux1", "auxChannel": 1, "module": "None", "label": "Pump"},
+                ],
+            }
+        )
+        assert len(ds.auxs) == 1
+        assert ds.auxs[0].id == "Aux1"
+
+
+class TestEquipmentsInfo:
+    def test_from_dict(self):
+        eq = EquipmentsInfo.from_dict(DEVICE_RESPONSE["equipmentsInfo"])
+        assert eq.has_ph_sensor is True
+        assert eq.has_orp_sensor is True
+        assert eq.has_jet_stream is False
+        assert eq.has_flow_meter is False
+
+
+class TestDeviceHistory:
+    def test_from_dict(self):
+        h = DeviceHistory.from_dict(DEVICE_RESPONSE["history"])
+        assert h.last_backwash_date == "2026-05-16T11:03:00"
+        assert h.last_refill_date == "2026-05-16T22:28:00"
+        assert h.last_ph_measure_date == "2026-05-23T04:15:00"
+        assert h.ph_last_injection_duration is None
+        assert h.aco_last_injection_duration is None
+        assert h.remnant_last_injection_duration is None
+
+
+class TestVersionInfo:
+    def test_from_dict(self):
+        v = VersionInfo.from_dict(DEVICE_RESPONSE["versionInfo"])
+        assert v.poolcop_version == "44.9.0"
+        assert v.model == "Evolution"
+        assert v.os_version == "1.2.3"
 
 
 class TestPool:
     def test_from_dict(self):
-        data = {
-            "id": 10,
-            "nickname": "Main Pool",
-            "latitude": -33.8688,
-            "longitude": 151.2093,
-            "timezone": "Australia/Sydney",
-            "city": "Sydney",
-            "country": "Australia",
-        }
-        pool = Pool.from_dict(data)
-        assert pool.id == 10
-        assert pool.nickname == "Main Pool"
-        assert pool.latitude == -33.8688
-        assert pool.timezone == "Australia/Sydney"
+        pool = Pool.from_dict(POOL_RESPONSE)
+        assert pool.id == 97138
+        assert pool.nickname == "Striker"
+        assert pool.latitude == 52.165958
+        assert pool.city == "TestCity"
+        assert pool.timezone == "Europe/Amsterdam"
+        assert len(pool.devices) == 1
+        assert pool.devices[0].id == 2478
 
-    def test_from_dict_defaults(self):
-        pool = Pool.from_dict({})
-        assert pool.id == 0
+    def test_from_dict_minimal(self):
+        pool = Pool.from_dict({"id": 1})
+        assert pool.id == 1
         assert pool.nickname is None
-        assert pool.latitude is None
+        assert pool.devices == []
 
 
-class TestUserProfile:
+class TestDeviceMinimalistic:
     def test_from_dict(self):
-        data = {
-            "id": 5,
-            "email": "user@example.com",
-            "firstname": "Test",
-            "lastname": "User",
-            "timezone": "Australia/Sydney",
-        }
-        profile = UserProfile.from_dict(data)
-        assert profile.id == 5
-        assert profile.email == "user@example.com"
-        assert profile.firstname == "Test"
+        dm = DeviceMinimalistic.from_dict({"id": 2478, "nickname": "Striker"})
+        assert dm.id == 2478
+        assert dm.nickname == "Striker"
 
-    def test_from_dict_defaults(self):
-        profile = UserProfile.from_dict({})
-        assert profile.id == 0
-        assert profile.email is None
+
+class TestPoolCopDevice:
+    def test_from_dict(self):
+        device = PoolCopDevice.from_dict(DEVICE_RESPONSE)
+        assert device.id == 2478
+        assert device.nickname == "Striker"
+        assert device.is_fully_connected is True
+        assert device.cloud_access_state == "Unlimited"
+        assert device.version_info.model == "Evolution"
+        assert device.state.ph == 7.5
+        assert device.settings.pool.volume == 77
+
+    def test_from_dict_minimal(self):
+        device = PoolCopDevice.from_dict({"id": 1})
+        assert device.id == 1
+        assert device.state.ph == 0.0
+        assert device.settings.pool.volume == 0.0
+
+
+class TestElectrolyserSettings:
+    def test_from_dict(self):
+        es = ElectrolyserSettings.from_dict(
+            {"polarityInversionDuration": 4, "productionPercent": 80}
+        )
+        assert es.polarity_inversion_duration == 4
+        assert es.production_percent == 80
+
+    def test_defaults(self):
+        es = ElectrolyserSettings.from_dict({})
+        assert es.polarity_inversion_duration == 0
+        assert es.production_percent == 0
+
+
+class TestFacSettings:
+    def test_from_dict(self):
+        fac = FacSettings.from_dict(
+            {
+                "installed": True,
+                "setPoint": 1.5,
+                "lowValue": 0.5,
+                "highValue": 3.0,
+                "protection": True,
+            }
+        )
+        assert fac.installed is True
+        assert fac.set_point == 1.5
+        assert fac.protection is True
+
+
+class TestFcSettings:
+    def test_from_dict(self):
+        fc = FcSettings.from_dict(
+            {"installed": True, "setPoint": 1.0, "lowValue": 0.2, "highValue": 2.0}
+        )
+        assert fc.installed is True
+        assert fc.set_point == 1.0
+
+
+class TestTcSettings:
+    def test_from_dict(self):
+        tc = TcSettings.from_dict({"installed": True, "lowValue": 0, "highValue": 5})
+        assert tc.installed is True
+        assert tc.high_value == 5
+
+
+class TestAcoSettings:
+    def test_from_dict(self):
+        aco = AcoSettings.from_dict(
+            {"installed": True, "flowRate": 10, "module": "None", "aux": "Aux1"}
+        )
+        assert aco.installed is True
+        assert aco.flow_rate == 10
+
+
+class TestRemnantSettings:
+    def test_from_dict(self):
+        rem = RemnantSettings.from_dict(
+            {
+                "installed": True,
+                "flowRate": 5,
+                "module": "None",
+                "aux": "Aux2",
+                "temperatureCompensation": True,
+                "mode": "Auto",
+            }
+        )
+        assert rem.installed is True
+        assert rem.temperature_compensation is True
+        assert rem.mode == "Auto"
+
+
+class TestSuctionValveSettings:
+    def test_from_dict(self):
+        sv = SuctionValveSettings.from_dict({"type": "ThreeWay", "source": "Skimmer"})
+        assert sv.type == "ThreeWay"
+        assert sv.source == "Skimmer"
 
 
 class TestPoolCopCommand:
     def test_from_dict(self):
-        data = {
-            "id": 1001,
-            "poolCopId": 42,
-            "label": "SetPump",
-            "commandDate": "2026-01-15T10:00:00Z",
-            "deliveryDate": "2026-01-15T10:00:05Z",
-            "confirmationDate": "2026-01-15T10:00:10Z",
-            "isDelivered": True,
-            "returnCode": 0,
-        }
-        cmd = PoolCopCommand.from_dict(data)
-        assert cmd.id == 1001
-        assert cmd.pool_cop_id == 42
-        assert cmd.label == "SetPump"
-        assert cmd.is_delivered is True
-        assert cmd.return_code == 0
-
-    def test_from_dict_defaults(self):
-        cmd = PoolCopCommand.from_dict({})
-        assert cmd.id == 0
-        assert cmd.is_delivered is False
-        assert cmd.return_code is None
-
-
-class TestPoolCopAuxiliary:
-    def test_from_dict(self):
-        data = {
-            "auxChannel": 1,
-            "moduleId": 0,
-            "mode": "Auto",
-            "label": "PoolLight",
-            "friendlyName": "Pool Light",
-            "isReserved": False,
-            "status": True,
-            "hasTimer": True,
-            "isHeating": False,
-            "heatingSetPoint": 28.0,
-        }
-        aux = PoolCopAuxiliary.from_dict(data)
-        assert aux.aux_channel == 1
-        assert aux.mode == "Auto"
-        assert aux.label == "PoolLight"
-        assert aux.friendly_name == "Pool Light"
-        assert aux.status is True
-        assert aux.heating_set_point == 28.0
-
-    def test_from_dict_defaults(self):
-        aux = PoolCopAuxiliary.from_dict({})
-        assert aux.aux_channel == 0
-        assert aux.mode is None
-        assert aux.status is False
-
-
-class TestDataPoint:
-    def test_from_dict(self):
-        data = {"timestamp": "2026-01-15T12:00:00Z", "value": 7.2}
-        dp = DataPoint.from_dict(data)
-        assert dp.timestamp == "2026-01-15T12:00:00Z"
-        assert dp.value == 7.2
-
-    def test_from_dict_defaults(self):
-        dp = DataPoint.from_dict({})
-        assert dp.timestamp == ""
-        assert dp.value is None
-
-
-class TestDisconnectionTime:
-    def test_from_dict(self):
-        data = {
-            "start": "2026-01-15T10:00:00Z",
-            "end": "2026-01-15T10:30:00Z",
-            "duration": "00:30:00",
-        }
-        dt = DisconnectionTime.from_dict(data)
-        assert dt.start == "2026-01-15T10:00:00Z"
-        assert dt.end == "2026-01-15T10:30:00Z"
-        assert dt.duration == "00:30:00"
-
-    def test_from_dict_defaults(self):
-        dt = DisconnectionTime.from_dict({})
-        assert dt.start == ""
-        assert dt.end == ""
-        assert dt.duration == ""
-
-
-class TestWeatherCondition:
-    def test_from_dict_with_current(self):
-        data = {
-            "current": {
-                "temp_c": 28.5,
-                "humidity": 65,
-                "condition": {"text": "Sunny"},
-                "wind_kph": 12.3,
-                "uv": 8.0,
+        cmd = PoolCopCommand.from_dict(
+            {
+                "id": 100,
+                "deviceId": 2478,
+                "user": "Test",
+                "label": "SetTime",
+                "isDelivered": True,
+                "commandDate": "2026-01-01T00:00:00Z",
+                "deliveryDate": "2026-01-01T00:00:01Z",
+                "confirmationDate": "2026-01-01T00:00:02Z",
             }
-        }
-        w = WeatherCondition.from_dict(data)
-        assert w.temp_c == 28.5
-        assert w.humidity == 65
-        assert w.condition_text == "Sunny"
-        assert w.wind_kph == 12.3
-        assert w.uv == 8.0
-
-    def test_from_dict_flat(self):
-        data = {
-            "temp_c": 25.0,
-            "humidity": 70,
-            "condition": {"text": "Cloudy"},
-            "wind_kph": 5.0,
-            "uv": 3.0,
-        }
-        w = WeatherCondition.from_dict(data)
-        assert w.temp_c == 25.0
-
-    def test_from_dict_defaults(self):
-        w = WeatherCondition.from_dict({})
-        assert w.temp_c == 0.0
-        assert w.humidity == 0
-        assert w.condition_text == ""
+        )
+        assert cmd.id == 100
+        assert cmd.device_id == 2478
+        assert cmd.user == "Test"
+        assert cmd.is_delivered is True
