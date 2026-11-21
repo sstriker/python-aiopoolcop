@@ -16,7 +16,7 @@ This library backs the [PoolCop Home Assistant integration](https://github.com/s
 pip install aiopoolcop
 ```
 
-Requires Python 3.12 or newer.
+Requires Python 3.14 or newer (the same as Home Assistant).
 
 ## Getting an API key
 

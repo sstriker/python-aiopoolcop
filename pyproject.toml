@@ -16,8 +16,6 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Natural Language :: English",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
     "Topic :: Software Development :: Libraries :: Python Modules",
@@ -28,7 +26,7 @@ packages = [
 
 [tool.poetry.dependencies]
 aiohttp = ">=3.0.0"
-python = "^3.12"
+python = "^3.14"
 yarl = ">=1.6.0"
 
 [tool.poetry.urls]
@@ -52,7 +50,7 @@ requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 88
 
 [tool.ruff.lint]
@@ -78,7 +76,7 @@ ignore = [
 ]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 show_error_codes = true
 warn_redundant_casts = true
 warn_unused_ignores = true
