@@ -8,12 +8,15 @@ from aiohttp import ClientError
 from aioresponses import aioresponses
 
 from aiopoolcop import (
+    FiltrationTimer,
+    PoolCopClientAccessExpiredError,
     PoolCopClientAPI,
     PoolCopClientAuthError,
     PoolCopClientConnectionError,
     PoolCopClientError,
     PoolCopClientNotFoundError,
     PoolCopClientRateLimitError,
+    parse_units,
 )
 
 from .conftest import (
@@ -25,6 +28,18 @@ from .conftest import (
 )
 
 URL_PATTERN = re.compile(rf"^{re.escape(BASE_URL)}/.*$")
+
+
+def _sent(mock_api: aioresponses, method: str, path: str):
+    """Return the single request sent to ``path`` (query string ignored)."""
+    calls = [
+        call
+        for (m, url), sent in mock_api.requests.items()
+        if m == method and url.path == path
+        for call in sent
+    ]
+    assert len(calls) == 1
+    return calls[0]
 
 
 # ---------------------------------------------------------------------------
@@ -74,6 +89,27 @@ class TestErrorHandling:
         with pytest.raises(PoolCopClientRateLimitError) as exc_info:
             await api.get_pools()
         assert exc_info.value.retry_after == 10
+
+    async def test_402_access_expired(
+        self, api: PoolCopClientAPI, mock_api: aioresponses
+    ):
+        mock_api.get(URL_PATTERN, status=402)
+        with pytest.raises(PoolCopClientAccessExpiredError):
+            await api.get_device(2478)
+
+    async def test_400_includes_detail(
+        self, api: PoolCopClientAPI, mock_api: aioresponses
+    ):
+        mock_api.post(URL_PATTERN, status=400, body="filtrationMode is invalid")
+        with pytest.raises(PoolCopClientError, match=r"400.*filtrationMode is invalid"):
+            await api.set_filtration_timer(2478, "Bogus")
+
+    async def test_502_command_failed(
+        self, api: PoolCopClientAPI, mock_api: aioresponses
+    ):
+        mock_api.post(URL_PATTERN, status=502)
+        with pytest.raises(PoolCopClientError, match="command failed"):
+            await api.stop_backwash(2478)
 
     async def test_500_server_error(
         self, api: PoolCopClientAPI, mock_api: aioresponses
@@ -138,7 +174,7 @@ class TestPools:
     """Test pool endpoints."""
 
     async def test_get_pools(self, api: PoolCopClientAPI, mock_api: aioresponses):
-        mock_api.get(f"{BASE_URL}/pools", payload=POOLS_RESPONSE)
+        mock_api.get(f"{BASE_URL}/pools?page=1", payload=POOLS_RESPONSE)
         pools = await api.get_pools()
         assert len(pools) == 1
         assert pools[0].id == 97138
@@ -146,6 +182,57 @@ class TestPools:
         assert pools[0].latitude == 52.165958
         assert len(pools[0].devices) == 1
         assert pools[0].devices[0].id == 2478
+
+    async def test_get_pools_all_pages(
+        self, api: PoolCopClientAPI, mock_api: aioresponses
+    ):
+        pool = POOLS_RESPONSE["data"][0]
+        mock_api.get(
+            f"{BASE_URL}/pools?page=1",
+            payload={**POOLS_RESPONSE, "hasNextPage": True, "totalPages": 2},
+        )
+        mock_api.get(
+            f"{BASE_URL}/pools?page=2",
+            payload={
+                **POOLS_RESPONSE,
+                "currentPage": 2,
+                "totalPages": 2,
+                "hasPreviousPage": True,
+                "data": [{**pool, "id": 97139}],
+            },
+        )
+        pools = await api.get_pools()
+        assert [p.id for p in pools] == [97138, 97139]
+
+    async def test_get_pools_single_page(
+        self, api: PoolCopClientAPI, mock_api: aioresponses
+    ):
+        mock_api.get(
+            f"{BASE_URL}/pools?page=3",
+            payload={**POOLS_RESPONSE, "currentPage": 3, "hasNextPage": True},
+        )
+        pools = await api.get_pools(page=3)
+        assert [p.id for p in pools] == [97138]
+
+    async def test_get_pools_stops_at_max_pages(
+        self, api: PoolCopClientAPI, mock_api: aioresponses, monkeypatch
+    ):
+        monkeypatch.setattr("aiopoolcop.client.MAX_PAGES", 3)
+        mock_api.get(
+            re.compile(rf"^{re.escape(BASE_URL)}/pools\?page=\d+$"),
+            payload={**POOLS_RESPONSE, "hasNextPage": True},
+            repeat=True,
+        )
+        pools = await api.get_pools()
+        assert len(pools) == 3
+
+    async def test_get_pools_non_dict_response(
+        self, api: PoolCopClientAPI, mock_api: aioresponses
+    ):
+        mock_api.get(f"{BASE_URL}/pools?page=1", payload=[])
+        assert await api.get_pools() == []
+        mock_api.get(f"{BASE_URL}/pools?page=2", payload=[])
+        assert await api.get_pools(page=2) == []
 
     async def test_get_pool(self, api: PoolCopClientAPI, mock_api: aioresponses):
         mock_api.get(f"{BASE_URL}/pools/97138", payload=POOL_RESPONSE)
@@ -180,6 +267,30 @@ class TestDevice:
         devices = await api.get_devices()
         assert len(devices) == 1
         assert devices[0].id == 2478
+
+    async def test_get_devices_page(
+        self, api: PoolCopClientAPI, mock_api: aioresponses
+    ):
+        mock_api.get(
+            f"{BASE_URL}/devices?page=2",
+            payload={"hasNextPage": False, "data": [DEVICE_RESPONSE]},
+        )
+        devices = await api.get_devices(page=2)
+        assert [d.id for d in devices] == [2478]
+
+    async def test_units_header(self, api: PoolCopClientAPI, mock_api: aioresponses):
+        assert api.units == {}
+        mock_api.get(
+            f"{BASE_URL}/devices/2478",
+            payload=DEVICE_RESPONSE,
+            headers={"units": "temperature=[degF],pressure=[psi],volume=[gal_us]"},
+        )
+        await api.get_device(2478)
+        assert api.units == {
+            "temperature": "[degF]",
+            "pressure": "[psi]",
+            "volume": "[gal_us]",
+        }
 
     async def test_get_device(self, api: PoolCopClientAPI, mock_api: aioresponses):
         mock_api.get(f"{BASE_URL}/devices/2478", payload=DEVICE_RESPONSE)
@@ -234,7 +345,9 @@ class TestDevice:
         assert device.version_info.model == "Evolution"
 
     async def test_get_commands(self, api: PoolCopClientAPI, mock_api: aioresponses):
-        mock_api.get(f"{BASE_URL}/devices/2478/commands", payload=COMMANDS_RESPONSE)
+        mock_api.get(
+            f"{BASE_URL}/devices/2478/commands?page=1", payload=COMMANDS_RESPONSE
+        )
         commands = await api.get_commands(2478)
         assert len(commands) == 1
         assert commands[0].id == 7779477
@@ -281,6 +394,48 @@ class TestInteractions:
             status=202,
         )
         await api.set_valve_position(2478, "Backwash")
+
+    async def test_stop_backwash(self, api: PoolCopClientAPI, mock_api: aioresponses):
+        url = f"{BASE_URL}/devices/2478/interactions/stopbackwash"
+        mock_api.post(url, status=202)
+        await api.stop_backwash(2478)
+        _sent(mock_api, "POST", "/devices/2478/interactions/stopbackwash")
+
+    async def test_set_filtration_timer_mode_only(
+        self, api: PoolCopClientAPI, mock_api: aioresponses
+    ):
+        url = f"{BASE_URL}/devices/2478/interactions/filtrationtimer?filtrationMode=EcoPlus"
+        mock_api.post(url, status=202)
+        await api.set_filtration_timer(2478, "EcoPlus")
+        call = _sent(mock_api, "POST", "/devices/2478/interactions/filtrationtimer")
+        assert call.kwargs["params"] == {"filtrationMode": "EcoPlus"}
+        assert call.kwargs["json"] is None
+
+    async def test_set_filtration_timer_with_timers(
+        self, api: PoolCopClientAPI, mock_api: aioresponses
+    ):
+        url = (
+            f"{BASE_URL}/devices/2478/interactions/filtrationtimer"
+            "?filtrationMode=Timer&filtrationId=1"
+        )
+        mock_api.post(url, status=202)
+        await api.set_filtration_timer(
+            2478,
+            "Timer",
+            timers=[
+                FiltrationTimer(
+                    id=1, enabled=True, time_on="08:00:00", time_off="12:00:00"
+                ),
+                FiltrationTimer(id=2),
+            ],
+            filtration_id=1,
+        )
+        call = _sent(mock_api, "POST", "/devices/2478/interactions/filtrationtimer")
+        assert call.kwargs["params"] == {"filtrationMode": "Timer", "filtrationId": 1}
+        assert call.kwargs["json"] == [
+            {"id": 1, "enabled": True, "timeOn": "08:00:00", "timeOff": "12:00:00"},
+            {"id": 2, "enabled": False, "timeOn": "00:00:00", "timeOff": "00:00:00"},
+        ]
 
     async def test_set_auxiliary(self, api: PoolCopClientAPI, mock_api: aioresponses):
         mock_api.post(
@@ -353,3 +508,17 @@ class TestCompat:
         assert PoolCopCloudConnectionError is PoolCopClientConnectionError
         assert PoolCopCloudNotFoundError is PoolCopClientNotFoundError
         assert PoolCopCloudRateLimitError is PoolCopClientRateLimitError
+
+
+class TestParseUnits:
+    """Test the units header parser."""
+
+    def test_parse(self):
+        assert parse_units("temperature=Cel, pressure=kPa,flowRate=m3/h") == {
+            "temperature": "Cel",
+            "pressure": "kPa",
+            "flowRate": "m3/h",
+        }
+
+    def test_ignores_malformed_parts(self):
+        assert parse_units("garbage,=x,volume=m3,") == {"volume": "m3"}

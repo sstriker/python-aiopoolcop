@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import socket
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from typing import Any, Self
@@ -14,6 +15,7 @@ from yarl import URL
 
 from .const import API_BASE_PATH, API_HOST, USER_AGENT
 from .exceptions import (
+    PoolCopClientAccessExpiredError,
     PoolCopClientAuthError,
     PoolCopClientConnectionError,
     PoolCopClientError,
@@ -21,10 +23,14 @@ from .exceptions import (
     PoolCopClientRateLimitError,
 )
 from .models import (
+    FiltrationTimer,
     Pool,
     PoolCopCommand,
     PoolCopDevice,
 )
+
+# Safety net against a server that keeps reporting hasNextPage.
+MAX_PAGES = 100
 
 
 @dataclass
@@ -38,6 +44,13 @@ class PoolCopClientAPI:
     api_key: str
     session: ClientSession | None = None
     request_timeout: float = 15.0
+    # Seconds to wait between page requests (the API allows 1 request/s).
+    page_interval: float = 1.0
+
+    # Units of the last response, from the ``units`` header, e.g.
+    # {"temperature": "Cel", "pressure": "kPa", "volume": "m3",
+    #  "flowRate": "m3/h"} (UCUM codes, following the account's preferences).
+    units: dict[str, str] = field(default_factory=dict, init=False)
 
     _close_session: bool = field(default=False, init=False, repr=False)
 
@@ -63,6 +76,7 @@ class PoolCopClientAPI:
         path: str,
         *,
         params: dict[str, Any] | None = None,
+        json: Any = None,
         return_json: bool = True,
     ) -> Any:
         """Make an API request."""
@@ -80,6 +94,7 @@ class PoolCopClientAPI:
                     url,
                     headers=headers,
                     params=params,
+                    json=json,
                 )
         except TimeoutError as err:
             msg = "Timeout connecting to PoolCop Client API"
@@ -88,7 +103,10 @@ class PoolCopClientAPI:
             msg = f"Error connecting to PoolCop Client API: {err}"
             raise PoolCopClientConnectionError(msg) from err
 
-        self._handle_error_status(response)
+        await self._handle_error_status(response)
+
+        if units := response.headers.get("units"):
+            self.units = parse_units(units)
 
         if not return_json:
             return None
@@ -102,12 +120,17 @@ class PoolCopClientAPI:
         return await response.json()
 
     @staticmethod
-    def _handle_error_status(response: Any) -> None:
+    async def _handle_error_status(response: Any) -> None:
         """Raise typed exception for error HTTP status codes."""
         status = response.status
+        if status < HTTPStatus.BAD_REQUEST:
+            return
         if status == HTTPStatus.UNAUTHORIZED or status == HTTPStatus.FORBIDDEN:
             msg = f"Authentication failed ({status})"
             raise PoolCopClientAuthError(msg)
+        if status == HTTPStatus.PAYMENT_REQUIRED:
+            msg = "The device's cloud access has expired"
+            raise PoolCopClientAccessExpiredError(msg)
         if status == HTTPStatus.NOT_FOUND:
             msg = "Resource not found"
             raise PoolCopClientNotFoundError(msg)
@@ -119,23 +142,56 @@ class PoolCopClientAPI:
                     retry_after = int(data)
             msg = "Rate limit exceeded"
             raise PoolCopClientRateLimitError(msg, retry_after=retry_after)
-        if status >= HTTPStatus.INTERNAL_SERVER_ERROR:
+        detail = ""
+        with contextlib.suppress(Exception):
+            detail = (await response.text()).strip()[:200]
+        if status == HTTPStatus.BAD_GATEWAY:
+            msg = "The command failed and was not taken into account (502)"
+        elif status >= HTTPStatus.INTERNAL_SERVER_ERROR:
             msg = f"Server error ({status})"
-            raise PoolCopClientError(msg)
-        if status >= HTTPStatus.BAD_REQUEST:
+        else:
             msg = f"Client error ({status})"
-            raise PoolCopClientError(msg)
+        if detail:
+            msg = f"{msg}: {detail}"
+        raise PoolCopClientError(msg)
+
+    async def _get_all_pages[T](
+        self, path: str, parse: Callable[[dict[str, Any]], T]
+    ) -> list[T]:
+        """Fetch every page of a paginated endpoint."""
+        items: list[T] = []
+        page = 1
+        while True:
+            data = await self._request("GET", path, params={"page": page})
+            if not isinstance(data, dict):
+                break
+            items.extend(parse(item) for item in data.get("data") or [])
+            if not data.get("hasNextPage") or page >= MAX_PAGES:
+                break
+            page += 1
+            await asyncio.sleep(self.page_interval)
+        return items
+
+    async def _get_page[T](
+        self, path: str, page: int, parse: Callable[[dict[str, Any]], T]
+    ) -> list[T]:
+        """Fetch a single page of a paginated endpoint."""
+        data = await self._request("GET", path, params={"page": page})
+        items = (data.get("data") or []) if isinstance(data, dict) else []
+        return [parse(item) for item in items]
 
     # ------------------------------------------------------------------
     # Pool endpoints
     # ------------------------------------------------------------------
 
-    async def get_pools(self) -> list[Pool]:
-        """Get all pools the API key has access to."""
-        data = await self._request("GET", "/pools")
-        # Paginated response: {data: [...], currentPage, totalPages, ...}
-        items = data.get("data", []) if isinstance(data, dict) else []
-        return [Pool.from_dict(p) for p in items]
+    async def get_pools(self, *, page: int | None = None) -> list[Pool]:
+        """Get the pools the API key has access to.
+
+        Fetches every page unless ``page`` is given.
+        """
+        if page is not None:
+            return await self._get_page("/pools", page, Pool.from_dict)
+        return await self._get_all_pages("/pools", Pool.from_dict)
 
     async def get_pool(self, pool_id: int) -> Pool:
         """Get a specific pool by ID."""
@@ -146,22 +202,27 @@ class PoolCopClientAPI:
     # Device endpoints
     # ------------------------------------------------------------------
 
-    async def get_devices(self, *, page: int = 1) -> list[PoolCopDevice]:
-        """Get all devices the API key has access to (paginated)."""
-        data = await self._request("GET", "/devices", params={"page": page})
-        items = data.get("data", []) if isinstance(data, dict) else []
-        return [PoolCopDevice.from_dict(d) for d in items]
+    async def get_devices(self, *, page: int | None = None) -> list[PoolCopDevice]:
+        """Get the devices the API key has access to.
+
+        Fetches every page unless ``page`` is given.
+        """
+        if page is not None:
+            return await self._get_page("/devices", page, PoolCopDevice.from_dict)
+        return await self._get_all_pages("/devices", PoolCopDevice.from_dict)
 
     async def get_device(self, device_id: int) -> PoolCopDevice:
         """Get a device with full state, settings, history, and equipments."""
         data = await self._request("GET", f"/devices/{device_id}")
         return PoolCopDevice.from_dict(data)
 
-    async def get_commands(self, device_id: int) -> list[PoolCopCommand]:
-        """Get command history for a device."""
-        data = await self._request("GET", f"/devices/{device_id}/commands")
-        items = data.get("data", []) if isinstance(data, dict) else []
-        return [PoolCopCommand.from_dict(c) for c in items]
+    async def get_commands(
+        self, device_id: int, *, page: int = 1
+    ) -> list[PoolCopCommand]:
+        """Get one page (latest first) of a device's command history."""
+        return await self._get_page(
+            f"/devices/{device_id}/commands", page, PoolCopCommand.from_dict
+        )
 
     # ------------------------------------------------------------------
     # Device interaction endpoints
@@ -206,6 +267,39 @@ class PoolCopClientAPI:
             "POST",
             f"/devices/{device_id}/interactions/valveposition",
             params={"valvePosition": position, "filterId": filter_id},
+            return_json=False,
+        )
+
+    async def stop_backwash(self, device_id: int) -> None:
+        """Stop a backwash in progress."""
+        await self._request(
+            "POST",
+            f"/devices/{device_id}/interactions/stopbackwash",
+            return_json=False,
+        )
+
+    async def set_filtration_timer(
+        self,
+        device_id: int,
+        mode: str,
+        *,
+        timers: Sequence[FiltrationTimer] | None = None,
+        filtration_id: int | None = None,
+    ) -> None:
+        """Set the filtration mode and, optionally, its timers.
+
+        ``mode`` is one of Stop, Timer, EcoPlus, Volume, Continuous, Forced24H,
+        Forced48H, Forced72H, Mode24H or NoPump. Without ``filtration_id``
+        the first filtration is used.
+        """
+        params: dict[str, Any] = {"filtrationMode": mode}
+        if filtration_id is not None:
+            params["filtrationId"] = filtration_id
+        await self._request(
+            "POST",
+            f"/devices/{device_id}/interactions/filtrationtimer",
+            params=params,
+            json=[t.to_dict() for t in timers] if timers is not None else None,
             return_json=False,
         )
 
@@ -288,6 +382,16 @@ class PoolCopClientAPI:
 
     async def __aexit__(self, *_exc_info: Any) -> None:
         await self.close()
+
+
+def parse_units(header: str) -> dict[str, str]:
+    """Parse a ``units`` header such as ``temperature=Cel,pressure=kPa``."""
+    units: dict[str, str] = {}
+    for part in header.split(","):
+        key, sep, value = part.partition("=")
+        if sep and key.strip():
+            units[key.strip()] = value.strip()
+    return units
 
 
 # Backwards-compatible alias

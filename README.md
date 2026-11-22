@@ -4,8 +4,8 @@ Asynchronous Python client for the [PoolCop](https://www.poolcop.com) Client API
 (`https://client-api.poolcop.net`).
 
 It reads pools, devices, live state, settings and history, and sends commands
-(pump, pump speed, forced filtration, valve position, auxiliaries, heating
-setpoint, jet stream, alarms). All responses are parsed into typed, frozen
+(pump, pump speed, forced filtration, filtration mode and timers, valve
+position, stop backwash, auxiliaries, heating setpoint, jet stream, alarms). All responses are parsed into typed, frozen
 dataclasses.
 
 This library backs the [PoolCop Home Assistant integration](https://github.com/sstriker/hass-poolcop).
@@ -46,11 +46,15 @@ async def main() -> None:
             for minimal in pool.devices:
                 device = await api.get_device(minimal.id)
                 state = device.state
-                print(f"  {device.nickname}: water {state.water_temperature}, "
-                      f"pH {state.ph}, ORP {state.orp} mV")
+                print(
+                    f"  {device.nickname}: water {state.water_temperature}, "
+                    f"pH {state.ph}, ORP {state.orp} mV"
+                )
                 for pump in state.pumps:
-                    print(f"  pump {pump.id}: on={pump.pump_state} "
-                          f"speed={pump.current_speed} valve={pump.valve_position}")
+                    print(
+                        f"  pump {pump.id}: on={pump.pump_state} "
+                        f"speed={pump.current_speed} valve={pump.valve_position}"
+                    )
 
 
 asyncio.run(main())
@@ -63,23 +67,26 @@ Pass your own `aiohttp.ClientSession` with `session=` to share a session
 
 | Method | API call |
 | --- | --- |
-| `get_pools()` | `GET /pools` |
+| `get_pools(page=None)` | `GET /pools` |
 | `get_pool(pool_id)` | `GET /pools/{id}` |
-| `get_devices(page=1)` | `GET /devices` |
+| `get_devices(page=None)` | `GET /devices` |
 | `get_device(device_id)` | `GET /devices/{id}`: state, settings, history, equipment, versions |
-| `get_commands(device_id)` | `GET /devices/{id}/commands` |
+| `get_commands(device_id, page=1)` | `GET /devices/{id}/commands` |
 | `set_pump(device_id, on=..., pump_id=0)` | `POST .../interactions/pumpstate` |
 | `set_pump_speed(device_id, speed)` | `POST .../interactions/pumpspeed` |
 | `set_pump_forced(device_id, mode)` | `POST .../interactions/pumpforced` |
+| `set_filtration_timer(device_id, mode, timers=None, filtration_id=None)` | `POST .../interactions/filtrationtimer` |
 | `set_valve_position(device_id, position)` | `POST .../interactions/valveposition` |
+| `stop_backwash(device_id)` | `POST .../interactions/stopbackwash` |
 | `set_auxiliary(device_id, module, aux_id, on=...)` | `POST .../interactions/auxstate` |
 | `set_heating_setpoint(device_id, setpoint, aux_id, module)` | `POST .../interactions/heatingsetpoint` |
 | `set_jet_stream(device_id, on=...)` | `POST .../interactions/jetstreamstate` |
 | `clear_alarm(device_id, alarm_code)` | `DELETE .../interactions/clearalarm` |
 | `clear_all_alarms(device_id)` | `DELETE .../interactions/clearalarms` |
 
-`get_pools()`, `get_devices()` and `get_commands()` return a single page
-(up to 100 items) of the paginated API response.
+`get_pools()` and `get_devices()` fetch every page (100 items each, one
+request per second) unless you pass `page=`. `get_commands()` returns one
+page of the command history, latest first.
 
 ### Behaviour of the API to be aware of
 
@@ -91,8 +98,10 @@ Pass your own `aiohttp.ClientSession` with `session=` to share a session
 - **Commands are asynchronous:** interaction calls are accepted with HTTP 202
   and can take 30 seconds to 2 minutes to show up in the device state.
 - **Units follow your account:** measurements are returned in the units
-  selected in your PoolCop app preferences, reported by the API in a
-  `units` response header.
+  selected in your PoolCop app preferences. The API reports them in a
+  `units` response header (UCUM codes); the client keeps the latest one in
+  `api.units`, e.g. `{"temperature": "Cel", "pressure": "kPa", "volume": "m3",
+  "flowRate": "m3/h"}`.
 
 ### Errors
 
@@ -101,9 +110,11 @@ All exceptions derive from `PoolCopClientError`:
 | Exception | Raised on |
 | --- | --- |
 | `PoolCopClientAuthError` | HTTP 401/403 (missing or invalid key) |
+| `PoolCopClientAccessExpiredError` | HTTP 402 (the device's cloud access has expired) |
 | `PoolCopClientNotFoundError` | HTTP 404 |
 | `PoolCopClientRateLimitError` | HTTP 429 |
 | `PoolCopClientConnectionError` | Timeouts and connection failures |
+| `PoolCopClientError` | Anything else, e.g. HTTP 400 (invalid parameters) or 502 (the command failed) |
 
 ## API documentation
 

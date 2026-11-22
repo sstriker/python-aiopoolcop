@@ -15,6 +15,10 @@ class PoolCopClientAuthError(PoolCopClientError):
     """PoolCop Client API authentication error (invalid API key)."""
 
 
+class PoolCopClientAccessExpiredError(PoolCopClientError):
+    """The device's PoolCop cloud access has expired (HTTP 402)."""
+
+
 class PoolCopClientNotFoundError(PoolCopClientError):
     """PoolCop Client API resource not found."""
 

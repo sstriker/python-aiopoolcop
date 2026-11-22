@@ -235,6 +235,15 @@ class FiltrationTimer:
             time_off=data.get("timeOff", "00:00:00"),
         )
 
+    def to_dict(self) -> dict[str, Any]:
+        """Return the API representation, as sent to filtrationtimer."""
+        return {
+            "id": self.id,
+            "enabled": self.enabled,
+            "timeOn": self.time_on,
+            "timeOff": self.time_off,
+        }
+
 
 @dataclass(frozen=True)
 class FiltrationSettings:
