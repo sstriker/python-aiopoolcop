@@ -1,7 +1,8 @@
 """Asynchronous Python client for the PoolCop Client API."""
 
-from .client import PoolCopClientAPI, PoolCopCloudAPI
+from .client import PoolCopClientAPI, PoolCopCloudAPI, parse_units
 from .exceptions import (
+    PoolCopClientAccessExpiredError,
     PoolCopClientAuthError,
     PoolCopClientConnectionError,
     PoolCopClientError,
@@ -70,6 +71,7 @@ __all__ = [
     "Pool",
     "PoolCopAuxiliary",
     "PoolCopClientAPI",
+    "PoolCopClientAccessExpiredError",
     "PoolCopClientAuthError",
     "PoolCopClientConnectionError",
     "PoolCopClientError",
@@ -93,4 +95,5 @@ __all__ = [
     "VersionInfo",
     "WaterLevelInfo",
     "WaterLevelSettings",
+    "parse_units",
 ]

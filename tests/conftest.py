@@ -303,7 +303,7 @@ COMMANDS_RESPONSE = {
 @pytest.fixture
 def api():
     """Create a PoolCopClientAPI client."""
-    return PoolCopClientAPI(api_key="test-api-key")
+    return PoolCopClientAPI(api_key="test-api-key", min_request_interval=0)
 
 
 @pytest.fixture
