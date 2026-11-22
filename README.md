@@ -84,8 +84,8 @@ Pass your own `aiohttp.ClientSession` with `session=` to share a session
 | `clear_alarm(device_id, alarm_code)` | `DELETE .../interactions/clearalarm` |
 | `clear_all_alarms(device_id)` | `DELETE .../interactions/clearalarms` |
 
-`get_pools()` and `get_devices()` fetch every page (100 items each, one
-request per second) unless you pass `page=`. `get_commands()` returns one
+`get_pools()` and `get_devices()` fetch every page (100 items each) unless
+you pass `page=`. `get_commands()` returns one
 page of the command history, latest first.
 
 ### Behaviour of the API to be aware of
@@ -94,7 +94,9 @@ page of the command history, latest first.
   between requests on the same entity (pump state, valve position and
   auxiliary state are exempt and allow 1 second). Exceeding them raises
   `PoolCopClientRateLimitError`, which carries `retry_after` when the
-  server sends it.
+  server sends it. The client spaces its own requests by
+  `min_request_interval` (default 1 second), so use one client per key;
+  the 10-second per-entity limit is up to you.
 - **Commands are asynchronous:** interaction calls are accepted with HTTP 202
   and can take 30 seconds to 2 minutes to show up in the device state.
 - **Units follow your account:** measurements are returned in the units

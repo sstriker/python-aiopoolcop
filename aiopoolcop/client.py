@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import socket
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from http import HTTPStatus
@@ -39,13 +40,15 @@ class PoolCopClientAPI:
 
     Uses x-api-key header authentication.
     Rate limits: 1s between queries, 10s between queries on same entity.
+    Requests made through one client are spaced by ``min_request_interval``.
     """
 
     api_key: str
     session: ClientSession | None = None
     request_timeout: float = 15.0
-    # Seconds to wait between page requests (the API allows 1 request/s).
-    page_interval: float = 1.0
+    # Minimum seconds between two requests made through this client. The API
+    # allows one request per second per key, so share one client per key.
+    min_request_interval: float = 1.0
 
     # Units of the last response, from the ``units`` header, e.g.
     # {"temperature": "Cel", "pressure": "kPa", "volume": "m3",
@@ -53,6 +56,10 @@ class PoolCopClientAPI:
     units: dict[str, str] = field(default_factory=dict, init=False)
 
     _close_session: bool = field(default=False, init=False, repr=False)
+    _throttle: asyncio.Lock = field(
+        default_factory=asyncio.Lock, init=False, repr=False
+    )
+    _last_request: float | None = field(default=None, init=False, repr=False)
 
     def _build_url(self, path: str) -> URL:
         """Build a full API URL."""
@@ -88,14 +95,19 @@ class PoolCopClientAPI:
         headers = self._headers()
 
         try:
-            async with asyncio.timeout(self.request_timeout):
-                response = await self.session.request(
-                    method,
-                    url,
-                    headers=headers,
-                    params=params,
-                    json=json,
-                )
+            async with self._throttle:
+                await self._wait_for_slot()
+                try:
+                    async with asyncio.timeout(self.request_timeout):
+                        response = await self.session.request(
+                            method,
+                            url,
+                            headers=headers,
+                            params=params,
+                            json=json,
+                        )
+                finally:
+                    self._last_request = time.monotonic()
         except TimeoutError as err:
             msg = "Timeout connecting to PoolCop Client API"
             raise PoolCopClientConnectionError(msg) from err
@@ -118,6 +130,14 @@ class PoolCopClientAPI:
             raise PoolCopClientError(msg)
 
         return await response.json()
+
+    async def _wait_for_slot(self) -> None:
+        """Sleep until min_request_interval has passed since the last request."""
+        if self._last_request is None or self.min_request_interval <= 0:
+            return
+        wait = self._last_request + self.min_request_interval - time.monotonic()
+        if wait > 0:
+            await asyncio.sleep(wait)
 
     @staticmethod
     async def _handle_error_status(response: Any) -> None:
@@ -169,7 +189,6 @@ class PoolCopClientAPI:
             if not data.get("hasNextPage") or page >= MAX_PAGES:
                 break
             page += 1
-            await asyncio.sleep(self.page_interval)
         return items
 
     async def _get_page[T](

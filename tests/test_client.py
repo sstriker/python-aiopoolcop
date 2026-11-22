@@ -158,6 +158,26 @@ class TestSession:
         else:
             pytest.fail("No GET request found")
 
+    async def test_requests_are_spaced(self, mock_api: aioresponses, monkeypatch):
+        clock = [100.0]
+        sleeps: list[float] = []
+
+        async def fake_sleep(delay: float) -> None:
+            sleeps.append(delay)
+            clock[0] += delay
+
+        monkeypatch.setattr("aiopoolcop.client.time.monotonic", lambda: clock[0])
+        monkeypatch.setattr("aiopoolcop.client.asyncio.sleep", fake_sleep)
+        mock_api.get(URL_PATTERN, payload=POOLS_RESPONSE, repeat=True)
+        api = PoolCopClientAPI(api_key="k", min_request_interval=1.0)
+        await api.get_pools()
+        clock[0] += 0.25
+        await api.get_pools()
+        clock[0] += 5
+        await api.get_pools()
+        await api.close()
+        assert sleeps == [0.75]
+
     async def test_context_manager(self, mock_api: aioresponses):
         mock_api.get(URL_PATTERN, payload=POOLS_RESPONSE)
         async with PoolCopClientAPI(api_key="test-key") as api:
